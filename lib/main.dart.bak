@@ -1,0 +1,427 @@
+import 'package:flutter/material.dart';
+
+void main() {
+  runApp(const DdayApp());
+}
+
+class DdayApp extends StatelessWidget {
+  const DdayApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: '카운트다운',
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color(0xFFF4F6FA),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2F6BFF)),
+        useMaterial3: true,
+      ),
+      home: const HomeScreen(),
+    );
+  }
+}
+
+class DdayItem {
+  final String title;
+  final String date;
+  final int dday;
+  final String timeLeft;
+  final IconData icon;
+  final Color color;
+
+  const DdayItem({
+    required this.title,
+    required this.date,
+    required this.dday,
+    required this.timeLeft,
+    required this.icon,
+    required this.color,
+  });
+}
+
+enum ViewMode { card, list }
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  ViewMode viewMode = ViewMode.card;
+
+  final List<DdayItem> items = const [
+    DdayItem(
+      title: '아내 생일',
+      date: '2026.05.22 (금)',
+      dday: 23,
+      timeLeft: '23일 14:36:12',
+      icon: Icons.favorite_rounded,
+      color: Color(0xFFFF5C8A),
+    ),
+    DdayItem(
+      title: '결혼기념일',
+      date: '2026.06.10 (수)',
+      dday: 42,
+      timeLeft: '42일 05:12:30',
+      icon: Icons.diamond_outlined,
+      color: Color(0xFFFF8A3D),
+    ),
+    DdayItem(
+      title: '부모님 생신',
+      date: '2026.07.01 (수)',
+      dday: 63,
+      timeLeft: '63일 09:45:08',
+      icon: Icons.groups_rounded,
+      color: Color(0xFF3F7BFF),
+    ),
+    DdayItem(
+      title: '제주도 여행',
+      date: '2026.08.15 (토)',
+      dday: 108,
+      timeLeft: '108일 18:20:50',
+      icon: Icons.flight_takeoff_rounded,
+      color: Color(0xFF00A6C8),
+    ),
+    DdayItem(
+      title: '아들 생일',
+      date: '2026.09.05 (토)',
+      dday: 129,
+      timeLeft: '129일 07:22:33',
+      icon: Icons.cake_rounded,
+      color: Color(0xFF9B72F2),
+    ),
+    DdayItem(
+      title: '베트남 여행',
+      date: '2026.10.01 (목)',
+      dday: 155,
+      timeLeft: '155일 13:45:10',
+      icon: Icons.luggage_rounded,
+      color: Color(0xFF2F6BFF),
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            _topBar(),
+            _viewSwitch(),
+            Expanded(
+              child: viewMode == ViewMode.card ? _cardView() : _listView(),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF2F6BFF),
+        elevation: 8,
+        onPressed: () {},
+        child: const Icon(Icons.add, color: Colors.white, size: 30),
+      ),
+      bottomNavigationBar: _bottomNav(),
+    );
+  }
+
+  Widget _topBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 20, 18, 14),
+      child: Row(
+        children: [
+          const Icon(Icons.menu_rounded, size: 30, color: Color(0xFF18202B)),
+          const SizedBox(width: 20),
+          const Text(
+            '카운트다운',
+            style: TextStyle(
+              fontSize: 27,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF18202B),
+              letterSpacing: -1.2,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                viewMode =
+                    viewMode == ViewMode.card ? ViewMode.list : ViewMode.card;
+              });
+            },
+            icon: Icon(
+              viewMode == ViewMode.card
+                  ? Icons.view_list_rounded
+                  : Icons.grid_view_rounded,
+              size: 30,
+              color: const Color(0xFF3A414D),
+            ),
+          ),
+          const Icon(Icons.more_vert_rounded, size: 28, color: Color(0xFF3A414D)),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewSwitch() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(22, 8, 22, 14),
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.035),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _switchButton('카드 보기', ViewMode.card),
+          _switchButton('목록 보기', ViewMode.list),
+        ],
+      ),
+    );
+  }
+
+  Widget _switchButton(String text, ViewMode mode) {
+    final selected = viewMode == mode;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => viewMode = mode),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF2F6BFF) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: selected ? Colors.white : const Color(0xFF5F6673),
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cardView() {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(22, 12, 22, 96),
+      itemCount: items.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.65,
+      ),
+      itemBuilder: (context, index) {
+        return _ddayCard(items[index]);
+      },
+    );
+  }
+
+  Widget _ddayCard(DdayItem item) {
+    final progress = (100 - item.dday.clamp(0, 100)) / 100;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: item.color.withOpacity(0.055),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.045),
+            blurRadius: 18,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Column(
+	  mainAxisSize: MainAxisSize.min,
+	  crossAxisAlignment: CrossAxisAlignment.start,
+	  children: [
+	    // 🔝 상단 영역
+	    Icon(item.icon, color: item.color, size: 27),
+	    const SizedBox(height: 6),
+
+	    Text(
+		  item.title,
+		  maxLines: 1,
+		  overflow: TextOverflow.ellipsis,
+		  style: const TextStyle(
+		    fontWeight: FontWeight.w900,
+		    fontSize: 18,
+		  ),
+		),
+
+	    const SizedBox(height: 4),
+
+	    Text(
+	      item.date,
+	      style: const TextStyle(
+		color: Colors.black45,
+		fontSize: 13,
+	      ),
+	    ),
+
+	    //const Spacer(),
+
+	    // 🎯 가운데 (그래프만)
+	    Center(
+	      child: SizedBox(
+		width: 90,
+		height: 90,
+		child: Stack(
+		  alignment: Alignment.center,
+		  children: [
+		    CircularProgressIndicator(
+		      value: progress,
+		      strokeWidth: 7,
+		      backgroundColor: const Color(0xFFE8ECF2),
+		      color: item.color,
+		    ),
+		    Text(
+		      'D-${item.dday}',
+		      style: const TextStyle(
+			fontSize: 24,
+			fontWeight: FontWeight.w900,
+		      ),
+		    ),
+		  ],
+		),
+	      ),
+	    ),
+
+	    const SizedBox(height: 10),
+
+	    // 🔻 하단 (시간 따로 고정)
+	    Center(
+	      child: Text(
+		item.timeLeft,
+		style: const TextStyle(
+		  fontSize: 11,
+		  color: Colors.black54,
+		  fontWeight: FontWeight.w600,
+		),
+	      ),
+	    ),
+	  ],
+	),
+    );
+  }
+
+  Widget _listView() {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 96),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 13),
+          padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.035),
+                blurRadius: 14,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: item.color.withOpacity(0.12),
+                child: Icon(item.icon, color: item.color, size: 24),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        color: Color(0xFF18202B),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      item.date,
+                      style: const TextStyle(
+                        color: Color(0xFF858B96),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'D-${item.dday}',
+                    style: TextStyle(
+                      color: item.color,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.timeLeft,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF858B96),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFFB8BEC8)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _bottomNav() {
+    return BottomNavigationBar(
+      currentIndex: 0,
+      selectedItemColor: const Color(0xFF2F6BFF),
+      unselectedItemColor: const Color(0xFF9EA4AE),
+      selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w800),
+      unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
+      type: BottomNavigationBarType.fixed,
+      backgroundColor: Colors.white,
+      elevation: 10,
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: '홈'),
+        BottomNavigationBarItem(icon: Icon(Icons.calendar_month_rounded), label: '캘린더'),
+        BottomNavigationBarItem(icon: Icon(Icons.widgets_rounded), label: '위젯'),
+        BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: '설정'),
+      ],
+    );
+  }
+}
