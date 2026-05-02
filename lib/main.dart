@@ -1,11 +1,251 @@
 import 'dart:async';
 import 'dart:convert';
-
-import 'services/notification_service.dart';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:app_settings/app_settings.dart';
+import 'package:home_widget/home_widget.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
+
+
+class L {
+  final Locale locale;
+  const L(this.locale);
+
+  static L of(BuildContext context) => L(Localizations.localeOf(context));
+
+  bool get _ko => locale.languageCode == 'ko';
+  bool get _ja => locale.languageCode == 'ja';
+  bool get _vi => locale.languageCode == 'vi';
+
+  String pick({required String ko, required String en, String? ja, String? vi}) {
+    if (_ko) return ko;
+    if (_ja) return ja ?? en;
+    if (_vi) return vi ?? en;
+    return en;
+  }
+
+  String get appTitle => pick(ko: '디데이 알림', en: 'TickDay', ja: 'TickDay', vi: 'TickDay');
+  String get subtitle => pick(
+        ko: '소중한 날을 놓치지 마세요',
+        en: 'Never miss your important days',
+        ja: '大切な日を忘れない',
+        vi: 'Đừng bỏ lỡ ngày quan trọng',
+      );
+  String get myEvents => pick(ko: '내 일정', en: 'My Events', ja: '予定', vi: 'Sự kiện');
+  String get sortTimeLeft => pick(ko: '남은시간순', en: 'Time left', ja: '残り時間順', vi: 'Thời gian còn lại');
+  String get sortCreated => pick(ko: '등록일순', en: 'Newest', ja: '登録日順', vi: 'Mới nhất');
+  String get sortTitle => pick(ko: '제목순', en: 'Title', ja: 'タイトル順', vi: 'Tiêu đề');
+  String get sortIcon => pick(ko: '종류별', en: 'Category', ja: 'カテゴリ', vi: 'Danh mục');
+  String get sortRepeat => pick(ko: '반복우선', en: 'Repeat first', ja: '繰り返し優先', vi: 'Lặp lại trước');
+  String get list => pick(ko: '목록', en: 'List', ja: 'リスト', vi: 'Danh sách');
+  String get card => pick(ko: '카드', en: 'Cards', ja: 'カード', vi: 'Thẻ');
+  String get firstEventTitle => pick(ko: '첫 일정을 등록해보세요', en: 'Create your first event', ja: '最初の予定を登録しましょう', vi: 'Tạo sự kiện đầu tiên');
+  String get firstEventSubtitle => pick(ko: '생일, 결혼기념일, 여행까지 한눈에 관리하세요.', en: 'Track birthdays, anniversaries, trips and more.', ja: '誕生日や記念日、旅行まで一目で管理。', vi: 'Theo dõi sinh nhật, kỷ niệm, chuyến đi và hơn thế nữa.');
+  String get widgetNoticeTitle => pick(ko: '위젯 준비 중', en: 'Widget coming soon', ja: 'ウィジェット準備中', vi: 'Sắp có widget');
+  String get widgetNoticeSubtitle => pick(ko: '홈 화면에서 바로 보는 D-day 위젯을 준비하고 있어요.', en: 'A home screen D-day widget is being prepared.', ja: 'ホーム画面で見られるD-dayウィジェットを準備中です。', vi: 'Widget D-day trên màn hình chính đang được chuẩn bị.');
+  String get emptyTitle => pick(ko: '아직 등록된 일정이 없어요', en: 'No events yet', ja: 'まだ予定がありません', vi: 'Chưa có sự kiện');
+  String get emptySubtitle => pick(ko: '오른쪽 아래 + 버튼으로 첫 일정을 등록해보세요.', en: 'Tap the + button to add your first event.', ja: '右下の＋ボタンで最初の予定を追加しましょう。', vi: 'Nhấn nút + để thêm sự kiện đầu tiên.');
+  String get permissionTitle => pick(ko: '알림 설정 상태', en: 'Notification status', ja: '通知設定の状態', vi: 'Trạng thái thông báo');
+  String get permissionOk => pick(ko: '핵심 정상', en: 'Ready', ja: '正常', vi: 'Sẵn sàng');
+  String get permissionOkSubtitle => pick(ko: '기본 알림과 정확한 알람이 정상입니다.', en: 'Notifications and exact alarms are ready.', ja: '通知と正確なアラームは正常です。', vi: 'Thông báo và báo thức chính xác đã sẵn sàng.');
+  String get repeatYearly => pick(ko: '매년', en: 'Yearly', ja: '毎年', vi: 'Hằng năm');
+}
+
+class NotificationService {
+  NotificationService._();
+
+  static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  static void Function(String payload)? onNotificationClick;
+  static String? _launchPayload;
+
+  static String? takeLaunchPayload() {
+    final payload = _launchPayload;
+    _launchPayload = null;
+    return payload;
+  }
+
+  static const AndroidNotificationDetails _androidDetails = AndroidNotificationDetails(
+    'dday_alarm_channel',
+    'D-day 알림',
+    channelDescription: '등록한 D-day 일정 알림입니다.',
+    importance: Importance.max,
+    priority: Priority.high,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  static const NotificationDetails _details = NotificationDetails(android: _androidDetails);
+
+  static Future<void> init() async {
+    tzdata.initializeTimeZones();
+    try {
+      final timeZoneName = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timeZoneName.identifier));
+    } catch (_) {
+      tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
+    }
+
+    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const settings = InitializationSettings(android: android);
+    await _plugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        final payload = response.payload;
+        if (payload == null || payload.isEmpty || payload == '__test__') return;
+        onNotificationClick?.call(payload);
+      },
+    );
+
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    final launchPayload = launchDetails?.notificationResponse?.payload;
+    if (launchDetails?.didNotificationLaunchApp == true &&
+        launchPayload != null &&
+        launchPayload.isNotEmpty &&
+        launchPayload != '__test__') {
+      _launchPayload = launchPayload;
+    }
+
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.requestNotificationsPermission();
+    await androidPlugin?.requestExactAlarmsPermission();
+  }
+
+  static Future<bool> areNotificationsEnabled() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    try {
+      return await androidPlugin?.areNotificationsEnabled() ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> canScheduleExactAlarms() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    try {
+      return await androidPlugin?.canScheduleExactNotifications() ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> requestNotificationPermission() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.requestNotificationsPermission();
+  }
+
+  static Future<void> requestExactAlarmPermission() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.requestExactAlarmsPermission();
+  }
+
+  static int idFromString(String id) {
+    final parsed = int.tryParse(id);
+    if (parsed != null) return parsed.remainder(2147483647);
+    return id.hashCode & 0x7fffffff;
+  }
+
+  static Future<void> showNow({
+    int id = 999001,
+    String title = '테스트 알림',
+    String body = '이 알림이 보이면 기본 알림은 성공입니다.',
+    String? payload,
+  }) async {
+    await _plugin.show(id, title, body, _details, payload: payload);
+  }
+
+  static Future<bool> schedule({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledAt,
+    String? payload,
+  }) async {
+    if (!scheduledAt.isAfter(DateTime.now())) return false;
+
+    // 같은 ID로 이미 예약된 알림이 남아 있으면 기기/OS에 따라 새 예약이
+    // 씹히는 경우가 있어 먼저 취소 후 다시 예약합니다.
+    await _plugin.cancel(id);
+
+    final scheduled = tz.TZDateTime.from(scheduledAt, tz.local);
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        scheduled,
+        _details,
+        payload: payload,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+      return true;
+    } on PlatformException {
+      // 정확한 알람 권한이 잠깐 꺼졌거나 Android가 exact alarm을 거부하는 경우
+      // 앱이 완전히 실패하지 않도록 일반 예약 알림으로 한 번 더 시도합니다.
+      try {
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          scheduled,
+          _details,
+          payload: payload,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> cancel(int id) async => _plugin.cancel(id);
+}
+
+
+class WidgetDeepLinkService {
+  WidgetDeepLinkService._();
+
+  static const MethodChannel _channel = MethodChannel('tickday/widget_deeplink');
+  static void Function(String itemId)? _onItemId;
+
+  static void init(void Function(String itemId) onItemId) {
+    _onItemId = onItemId;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method != 'openWidgetItem') return;
+      final itemId = call.arguments?.toString() ?? '';
+      if (itemId.isEmpty) return;
+      _onItemId?.call(itemId);
+    });
+  }
+
+  static Future<String?> takeInitialItemId() async {
+    try {
+      final itemId = await _channel.invokeMethod<String>('takeInitialWidgetItemId');
+      if (itemId == null || itemId.isEmpty) return null;
+      return itemId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void dispose() {
+    _onItemId = null;
+    _channel.setMethodCallHandler(null);
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,1538 +260,2584 @@ class DdayApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'D-day App',
-      locale: const Locale('ko', 'KR'),
-      supportedLocales: const [
-        Locale('ko', 'KR'),
-        Locale('en', 'US'),
-      ],
+      title: 'TickDay',
+      supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US'), Locale('ja', 'JP'), Locale('vi', 'VN')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color(0xFFF5F7FB),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3182F6)),
         useMaterial3: true,
+        fontFamily: 'Roboto',
+        scaffoldBackgroundColor: const Color(0xFFF4F6FA),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7A3E91)),
+        textTheme: ThemeData.light().textTheme.apply(
+              bodyColor: const Color(0xFF111827),
+              displayColor: const Color(0xFF111827),
+            ),
       ),
-      home: const HomeScreen(),
+      home: const HomePage(),
     );
   }
 }
 
 class DdayItem {
+  final String id;
   final String title;
   final DateTime targetDate;
-  final int iconCodePoint;
+  final TimeOfDay targetTime;
+  final String repeatType; // none, yearly
+  final String icon;
   final int colorValue;
   final DateTime createdAt;
-  final String repeatType;
+  final String memo;
+  final int alarmMinutesBefore; // -1=none, -2=today 9AM, 0=at time, minutes before target
 
-  DdayItem({
+  const DdayItem({
+    required this.id,
     required this.title,
     required this.targetDate,
-    required this.iconCodePoint,
+    required this.targetTime,
+    required this.repeatType,
+    required this.icon,
     required this.colorValue,
+    required this.createdAt,
+    required this.memo,
+    required this.alarmMinutesBefore,
+  });
+
+  DateTime get targetDateTime => DateTime(
+        targetDate.year,
+        targetDate.month,
+        targetDate.day,
+        targetTime.hour,
+        targetTime.minute,
+      );
+
+  DdayItem copyWith({
+    String? id,
+    String? title,
+    DateTime? targetDate,
+    TimeOfDay? targetTime,
+    String? repeatType,
+    String? icon,
+    int? colorValue,
     DateTime? createdAt,
-    this.repeatType = 'none',
-  }) : createdAt = createdAt ?? DateTime.now();
-
-  IconData get icon => IconData(iconCodePoint, fontFamily: 'MaterialIcons');
-
-  Color get color => Color(colorValue);
-
-  bool get isYearly => repeatType == 'yearly';
-
-  Map<String, dynamic> toJson() {
-    return {
-      'title': title,
-      'targetDate': targetDate.toIso8601String(),
-      'iconCodePoint': iconCodePoint,
-      'colorValue': colorValue,
-      'createdAt': createdAt.toIso8601String(),
-      'repeatType': repeatType,
-    };
+    String? memo,
+    int? alarmMinutesBefore,
+  }) {
+    return DdayItem(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      targetDate: targetDate ?? this.targetDate,
+      targetTime: targetTime ?? this.targetTime,
+      repeatType: repeatType ?? this.repeatType,
+      icon: icon ?? this.icon,
+      colorValue: colorValue ?? this.colorValue,
+      createdAt: createdAt ?? this.createdAt,
+      memo: memo ?? this.memo,
+      alarmMinutesBefore: alarmMinutesBefore ?? this.alarmMinutesBefore,
+    );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'targetDate': targetDate.toIso8601String(),
+        'targetHour': targetTime.hour,
+        'targetMinute': targetTime.minute,
+        'repeatType': repeatType,
+        'icon': icon,
+        'colorValue': colorValue,
+        'createdAt': createdAt.toIso8601String(),
+        'memo': memo,
+        'alarmMinutesBefore': alarmMinutesBefore,
+      };
 
   factory DdayItem.fromJson(Map<String, dynamic> json) {
     return DdayItem(
-      title: json['title'] as String,
-      targetDate: DateTime.parse(json['targetDate'] as String),
-      iconCodePoint: json['iconCodePoint'] as int,
-      colorValue: json['colorValue'] as int,
-      createdAt: json['createdAt'] == null
-          ? DateTime.now()
-          : DateTime.parse(json['createdAt'] as String),
-      repeatType: (json['repeatType'] as String?) ?? 'none',
-    );
-  }
-
-  DdayItem copyWith({
-    String? title,
-    DateTime? targetDate,
-    int? iconCodePoint,
-    int? colorValue,
-    DateTime? createdAt,
-    String? repeatType,
-  }) {
-    return DdayItem(
-      title: title ?? this.title,
-      targetDate: targetDate ?? this.targetDate,
-      iconCodePoint: iconCodePoint ?? this.iconCodePoint,
-      colorValue: colorValue ?? this.colorValue,
-      createdAt: createdAt ?? this.createdAt,
-      repeatType: repeatType ?? this.repeatType,
+      id: json['id'] as String? ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      title: json['title'] as String? ?? '제목 없음',
+      targetDate: DateTime.tryParse(json['targetDate'] as String? ?? '') ?? DateTime.now(),
+      targetTime: TimeOfDay(
+        hour: json['targetHour'] as int? ?? 0,
+        minute: json['targetMinute'] as int? ?? 0,
+      ),
+      repeatType: json['repeatType'] as String? ?? 'none',
+      icon: json['icon'] as String? ?? 'star',
+      colorValue: json['colorValue'] as int? ?? const Color(0xFF7A3E91).value,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      memo: json['memo'] as String? ?? '',
+      alarmMinutesBefore: json['alarmMinutesBefore'] as int? ?? 1440,
     );
   }
 }
 
-enum ViewMode { card, list }
+class _NotificationPlan {
+  final DateTime target;
+  final DateTime alarmAt;
+  final bool fallbackToTargetTime;
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const _NotificationPlan({
+    required this.target,
+    required this.alarmAt,
+    required this.fallbackToTargetTime,
+  });
+}
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  static const String storageKey = 'dday_items';
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  static const _itemsKey = 'dday_items';
+  static const _hideIntroKey = 'hide_intro_notice';
+  static const _hideWidgetKey = 'hide_widget_notice';
 
-  List<DdayItem> items = [];
-  ViewMode viewMode = ViewMode.card;
-  Timer? timer;
-  DateTime now = DateTime.now();
+  final List<DdayItem> _items = [];
+  bool _isCardView = true;
+  String _sortType = 'timeLeft'; // timeLeft, createdAt, title, icon, repeat
+  bool _hideIntroNotice = false;
+  bool _hideWidgetNotice = false;
+  bool _notificationPermissionOk = false;
+  bool _exactAlarmPermissionOk = false;
+  bool _permissionCardExpanded = false;
+  final ScrollController _scrollController = ScrollController();
+  Timer? _clockTimer;
+  String? _pendingNotificationItemId;
 
   @override
   void initState() {
     super.initState();
-    loadItems();
-
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        now = DateTime.now();
-      });
-    });
+    WidgetsBinding.instance.addObserver(this);
+    NotificationService.onNotificationClick = _handleNotificationPayload;
+    WidgetDeepLinkService.init(_handleWidgetItemId);
+    _pendingNotificationItemId = NotificationService.takeLaunchPayload();
+    unawaited(_loadInitialWidgetItemId());
+    _loadAll(rescheduleNotifications: true);
+    _refreshPermissionStatus();
+    _startClockTimer();
   }
 
   @override
   void dispose() {
-    timer?.cancel();
+    _clockTimer?.cancel();
+    if (NotificationService.onNotificationClick == _handleNotificationPayload) {
+      NotificationService.onNotificationClick = null;
+    }
+    WidgetDeepLinkService.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> loadItems() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(storageKey);
-
-    if (saved == null || saved.isEmpty) {
-      items = [];
-      await saveItems();
-    } else {
-      final decoded = jsonDecode(saved) as List<dynamic>;
-      items = decoded
-          .map((e) => DdayItem.fromJson(e as Map<String, dynamic>))
-          .toList();
-      sortItems();
-      await saveItems();
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshNow();
+      _refreshPermissionStatus();
+      unawaited(_rescheduleAllNotifications());
+      _startClockTimer();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
+      _clockTimer?.cancel();
+      _clockTimer = null;
     }
-
-    if (!mounted) return;
-    setState(() {});
   }
 
-  Future<void> saveItems() async {
-    final prefs = await SharedPreferences.getInstance();
-    final encoded = jsonEncode(items.map((e) => e.toJson()).toList());
-    await prefs.setString(storageKey, encoded);
-  }
-
-  void sortItems() {
-    items.sort(
-      (a, b) => getNextOccurrence(a).compareTo(getNextOccurrence(b)),
-    );
-  }
-
-  DateTime getNextOccurrence(DdayItem item) {
-    final targetDate = item.targetDate;
-
-    if (item.repeatType == 'yearly') {
-      final today = DateTime(now.year, now.month, now.day);
-      DateTime next = DateTime(now.year, targetDate.month, targetDate.day);
-
-      if (next.isBefore(today)) {
-        next = DateTime(now.year + 1, targetDate.month, targetDate.day);
-      }
-
-      return next;
-    }
-
-    return DateTime(targetDate.year, targetDate.month, targetDate.day);
-  }
-
-  int getDday(DdayItem item) {
-    final today = DateTime(now.year, now.month, now.day);
-    final target = getNextOccurrence(item);
-    return target.difference(today).inDays;
-  }
-
-  String getDdayText(DdayItem item) {
-    final dday = getDday(item);
-
-    if (dday == 0) return 'D-Day';
-    if (dday > 0) return 'D-$dday';
-    return 'D+${dday.abs()}';
-  }
-
-  String getRemainTimeText(DdayItem item) {
-    final targetDate = getNextOccurrence(item);
-    final target = DateTime(
-      targetDate.year,
-      targetDate.month,
-      targetDate.day,
-      0,
-      0,
-      0,
-    );
-
-    final difference = target.difference(now);
-
-    if (difference.isNegative) {
-      final passed = now.difference(target);
-      final days = passed.inDays;
-      final hours = passed.inHours % 24;
-      final minutes = passed.inMinutes % 60;
-      return '$days일 $hours시간 $minutes분 지남';
-    }
-
-    final days = difference.inDays;
-    final hours = difference.inHours % 24;
-    final minutes = difference.inMinutes % 60;
-
-    return '$days일 $hours시간 $minutes분 남음';
-  }
-
-  String getSmallTimeText(DdayItem item) {
-    final targetDate = getNextOccurrence(item);
-    final target = DateTime(
-      targetDate.year,
-      targetDate.month,
-      targetDate.day,
-      0,
-      0,
-      0,
-    );
-
-    final difference = target.difference(now);
-
-    if (difference.isNegative) {
-      return '지남';
-    }
-
-    final hours = difference.inHours % 24;
-    final minutes = difference.inMinutes % 60;
-
-    return '$hours시간 $minutes분';
-  }
-
-  double getProgressValue(DdayItem item) {
-    final targetDate = getNextOccurrence(item);
-    final target = DateTime(
-      targetDate.year,
-      targetDate.month,
-      targetDate.day,
-      0,
-      0,
-      0,
-    );
-
-    final start = item.createdAt;
-
-    if (now.isAfter(target) || now.isAtSameMomentAs(target)) {
-      return 1.0;
-    }
-
-    if (now.isBefore(start) || now.isAtSameMomentAs(start)) {
-      return 0.0;
-    }
-
-    final total = target.difference(start).inSeconds;
-    final passed = now.difference(start).inSeconds;
-
-    if (total <= 0) return 1.0;
-
-    return (passed / total).clamp(0.0, 1.0);
-  }
-
-  Future<void> openAddScreen() async {
-    final newItem = await Navigator.push<DdayItem>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const AddDdayScreen(),
-      ),
-    );
-
-    if (newItem == null) return;
-
-    setState(() {
-      items.add(newItem);
-      sortItems();
+  void _startClockTimer() {
+    _clockTimer?.cancel();
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      _refreshNow();
     });
-
-    // 🔥 알림 추가
-    await NotificationService.scheduleDdayNotification(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title: newItem.title,
-      targetDate: newItem.targetDate,
-    );
-
-    await saveItems();
   }
 
-  Future<void> openEditScreen(DdayItem item) async {
-    final editedItem = await Navigator.push<DdayItem>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AddDdayScreen(
-          item: item,
+  void _refreshNow() {
+    if (!mounted) return;
+    setState(() {
+      if (_sortType == 'timeLeft') {
+        _sortItems();
+      }
+    });
+    unawaited(_updateHomeWidget());
+  }
+
+  void _handleNotificationPayload(String payload) {
+    if (payload.isEmpty || payload == '__test__') return;
+    _pendingNotificationItemId = payload;
+    _openPendingNotificationItem();
+  }
+
+  Future<void> _loadInitialWidgetItemId() async {
+    final itemId = await WidgetDeepLinkService.takeInitialItemId();
+    if (itemId == null || itemId.isEmpty) return;
+    _handleWidgetItemId(itemId);
+  }
+
+  void _handleWidgetItemId(String itemId) {
+    if (itemId.isEmpty) return;
+    _pendingNotificationItemId = itemId;
+    _openPendingNotificationItem();
+  }
+
+  void _openPendingNotificationItem() {
+    final id = _pendingNotificationItemId;
+    if (id == null || id.isEmpty || !mounted) return;
+
+    DdayItem? targetItem;
+    for (final item in _items) {
+      if (item.id == id) {
+        targetItem = item;
+        break;
+      }
+    }
+
+    if (targetItem == null) return;
+    _pendingNotificationItemId = null;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showDetail(targetItem!);
+    });
+  }
+
+  void _toggleViewMode() {
+    setState(() => _isCardView = !_isCardView);
+
+    // 카드/목록 전환 시 현재 스크롤 위치 때문에
+    // 상단 알림 설정 상태 카드가 사라진 것처럼 보이지 않도록
+    // 화면을 항상 맨 위로 되돌립니다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  Future<void> _refreshPermissionStatus() async {
+    final notificationOk = await NotificationService.areNotificationsEnabled();
+    final exactOk = await NotificationService.canScheduleExactAlarms();
+    if (!mounted) return;
+    setState(() {
+      _notificationPermissionOk = notificationOk;
+      _exactAlarmPermissionOk = exactOk;
+    });
+  }
+
+  void _sortItems() {
+    switch (_sortType) {
+      case 'createdAt':
+        _items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        break;
+      case 'title':
+        _items.sort((a, b) => a.title.compareTo(b.title));
+        break;
+      case 'icon':
+        _items.sort((a, b) => a.icon.compareTo(b.icon));
+        break;
+      case 'repeat':
+        _items.sort((a, b) => b.repeatType.compareTo(a.repeatType));
+        break;
+      case 'timeLeft':
+      default:
+        _items.sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
+        break;
+    }
+  }
+
+  String _sortText(String type) {
+    switch (type) {
+      case 'createdAt':
+        return L.of(context).sortCreated;
+      case 'title':
+        return L.of(context).sortTitle;
+      case 'icon':
+        return L.of(context).sortIcon;
+      case 'repeat':
+        return L.of(context).sortRepeat;
+      case 'timeLeft':
+      default:
+        return L.of(context).sortTimeLeft;
+    }
+  }
+
+  void _showSortPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _sortTile('timeLeft', Icons.schedule_rounded, L.of(context).sortTimeLeft),
+              _sortTile('createdAt', Icons.history_rounded, L.of(context).sortCreated),
+              _sortTile('title', Icons.sort_by_alpha_rounded, L.of(context).sortTitle),
+              _sortTile('icon', Icons.category_rounded, L.of(context).sortIcon),
+              _sortTile('repeat', Icons.repeat_rounded, L.of(context).sortRepeat),
+            ],
+          ),
         ),
       ),
     );
-
-    if (editedItem == null) return;
-
-    final index = items.indexOf(item);
-    if (index == -1) return;
-
-    setState(() {
-      items[index] = editedItem;
-      sortItems();
-    });
-
-    await saveItems();
   }
 
-  Future<void> deleteItem(DdayItem item) async {
-    final shouldDelete = await showDialog<bool>(
+  Widget _sortTile(String value, IconData icon, String label) {
+    final selected = _sortType == value;
+    return ListTile(
+      leading: Icon(icon, color: selected ? const Color(0xFF2F80ED) : const Color(0xFF6B7280)),
+      title: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: selected ? const Color(0xFF2F80ED) : const Color(0xFF111827))),
+      trailing: selected ? const Icon(Icons.check_rounded, color: Color(0xFF2F80ED)) : null,
+      onTap: () {
+        setState(() {
+          _sortType = value;
+          _sortItems();
+        });
+        Navigator.pop(context);
+      },
+    );
+  }
+
+  Future<void> _loadAll({bool rescheduleNotifications = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final rawItems = prefs.getStringList(_itemsKey) ?? [];
+    final loaded = rawItems
+        .map((e) {
+          try {
+            return DdayItem.fromJson(jsonDecode(e) as Map<String, dynamic>);
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<DdayItem>()
+        .toList();
+
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(loaded);
+      _sortItems();
+      _hideIntroNotice = prefs.getBool(_hideIntroKey) ?? false;
+      _hideWidgetNotice = prefs.getBool(_hideWidgetKey) ?? false;
+    });
+
+    _openPendingNotificationItem();
+    await _updateHomeWidget();
+
+    if (rescheduleNotifications) {
+      await _rescheduleAllNotifications();
+    }
+  }
+
+  Future<void> _saveItems() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_itemsKey, _items.map((e) => jsonEncode(e.toJson())).toList());
+  }
+
+
+  DdayItem? _nearestWidgetItem() {
+    if (_items.isEmpty) return null;
+    final upcoming = List<DdayItem>.from(_items)
+      ..sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
+    return upcoming.first;
+  }
+
+  String _widgetRemainText(DdayItem item) {
+    final d = _timeLeft(item);
+    if (d.isNegative) return '오늘입니다';
+    final days = d.inDays;
+    final hours = d.inHours % 24;
+    if (days <= 0) return '${hours}시간 남음';
+    return '${days}일 남음';
+  }
+
+  Future<void> _updateHomeWidget() async {
+    try {
+      final item = _nearestWidgetItem();
+      if (item == null) {
+        await HomeWidget.saveWidgetData<String>('widget_item_id', '');
+        await HomeWidget.saveWidgetData<String>('widget_dday', 'D-Day');
+        await HomeWidget.saveWidgetData<String>('widget_title', '일정을 등록하세요');
+        await HomeWidget.saveWidgetData<String>('widget_remain', 'TickDay');
+        await HomeWidget.saveWidgetData<int>('widget_target_millis', 0);
+        await HomeWidget.saveWidgetData<String>('widget_repeat_type', 'none');
+        await HomeWidget.saveWidgetData<int>('widget_month', 0);
+        await HomeWidget.saveWidgetData<int>('widget_day', 0);
+        await HomeWidget.saveWidgetData<int>('widget_hour', 0);
+        await HomeWidget.saveWidgetData<int>('widget_minute', 0);
+      } else {
+        final target = _effectiveTarget(item);
+        await HomeWidget.saveWidgetData<String>('widget_item_id', item.id);
+        await HomeWidget.saveWidgetData<String>('widget_dday', _dDayText(item));
+        await HomeWidget.saveWidgetData<String>('widget_title', item.title);
+        await HomeWidget.saveWidgetData<String>('widget_remain', _widgetRemainText(item));
+        await HomeWidget.saveWidgetData<int>('widget_target_millis', target.millisecondsSinceEpoch);
+        await HomeWidget.saveWidgetData<String>('widget_repeat_type', item.repeatType);
+        await HomeWidget.saveWidgetData<int>('widget_month', item.targetDate.month);
+        await HomeWidget.saveWidgetData<int>('widget_day', item.targetDate.day);
+        await HomeWidget.saveWidgetData<int>('widget_hour', item.targetTime.hour);
+        await HomeWidget.saveWidgetData<int>('widget_minute', item.targetTime.minute);
+      }
+      await HomeWidget.updateWidget(androidName: 'DdayWidgetProvider');
+    } catch (_) {
+      // 홈 위젯이 아직 추가되지 않았거나 네이티브 위젯 초기화 전이어도 앱 기능은 그대로 유지합니다.
+    }
+  }
+
+  Future<void> _setNoticeHidden(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+    setState(() {
+      if (key == _hideIntroKey) _hideIntroNotice = value;
+      if (key == _hideWidgetKey) _hideWidgetNotice = value;
+    });
+  }
+
+  Future<void> _upsertItem(DdayItem item) async {
+    final index = _items.indexWhere((e) => e.id == item.id);
+    setState(() {
+      if (index >= 0) {
+        _items[index] = item;
+      } else {
+        _items.add(item);
+      }
+      _sortItems();
+    });
+    await _saveItems();
+    await _updateHomeWidget();
+    await _scheduleNotifications(item);
+  }
+
+  DateTime _alarmTimeForTarget(DdayItem item, DateTime target) {
+    if (item.alarmMinutesBefore == -2) {
+      return DateTime(target.year, target.month, target.day, 9, 0);
+    }
+    return target.subtract(Duration(minutes: item.alarmMinutesBefore));
+  }
+
+  _NotificationPlan? _nextNotificationPlan(DdayItem item) {
+    if (item.alarmMinutesBefore == -1) return null;
+
+    final now = DateTime.now();
+
+    if (item.repeatType == 'yearly') {
+      for (var i = 0; i < 8; i++) {
+        final year = now.year + i;
+        final target = DateTime(
+          year,
+          item.targetDate.month,
+          item.targetDate.day,
+          item.targetTime.hour,
+          item.targetTime.minute,
+        );
+        final alarmAt = _alarmTimeForTarget(item, target);
+
+        if (alarmAt.isAfter(now)) {
+          return _NotificationPlan(
+            target: target,
+            alarmAt: alarmAt,
+            fallbackToTargetTime: false,
+          );
+        }
+
+        // 알림 시점은 이미 지났지만 실제 D-day 시간이 아직 남아 있으면
+        // 조용히 버리지 않고 D-day 정각 알림으로 보정합니다.
+        if (target.isAfter(now.add(const Duration(seconds: 5)))) {
+          return _NotificationPlan(
+            target: target,
+            alarmAt: target,
+            fallbackToTargetTime: true,
+          );
+        }
+      }
+      return null;
+    }
+
+    final target = item.targetDateTime;
+    if (!target.isAfter(now)) return null;
+
+    final alarmAt = _alarmTimeForTarget(item, target);
+    if (alarmAt.isAfter(now)) {
+      return _NotificationPlan(
+        target: target,
+        alarmAt: alarmAt,
+        fallbackToTargetTime: false,
+      );
+    }
+
+    // 예: 오늘 10분 뒤 일정인데 기본값이 '하루 전'이면 원래 알림 시점은 과거입니다.
+    // 이 경우 예약 자체를 버리지 않고 D-day 정각에라도 울리게 합니다.
+    if (target.isAfter(now.add(const Duration(seconds: 5)))) {
+      return _NotificationPlan(
+        target: target,
+        alarmAt: target,
+        fallbackToTargetTime: true,
+      );
+    }
+
+    return null;
+  }
+
+  Future<void> _rescheduleAllNotifications() async {
+    for (final item in List<DdayItem>.from(_items)) {
+      await _scheduleNotifications(item);
+    }
+  }
+
+  Future<void> _scheduleNotifications(DdayItem item) async {
+    final notificationId = NotificationService.idFromString(item.id);
+    await NotificationService.cancel(notificationId);
+
+    final plan = _nextNotificationPlan(item);
+    if (plan == null) return;
+
+    final bodyPrefix = plan.fallbackToTargetTime ? '알림 시간이 지나 D-day 정각으로 보정됨' : _alarmText(item.alarmMinutesBefore);
+
+    await NotificationService.schedule(
+      id: notificationId,
+      title: 'D-day 알림: ${item.title}',
+      body: '$bodyPrefix · ${_fullDate(plan.target)} ${_timeText(TimeOfDay.fromDateTime(plan.target))}',
+      scheduledAt: plan.alarmAt,
+      payload: item.id,
+    );
+  }
+
+  Future<void> _deleteItem(DdayItem item) async {
+    await NotificationService.cancel(NotificationService.idFromString(item.id));
+    setState(() => _items.removeWhere((e) => e.id == item.id));
+    await _saveItems();
+    await _updateHomeWidget();
+  }
+
+  DateTime _effectiveTarget(DdayItem item) {
+    final now = DateTime.now();
+    var target = item.targetDateTime;
+    if (item.repeatType == 'yearly') {
+      target = DateTime(now.year, item.targetDate.month, item.targetDate.day, item.targetTime.hour, item.targetTime.minute);
+      if (!target.isAfter(now)) {
+        target = DateTime(now.year + 1, item.targetDate.month, item.targetDate.day, item.targetTime.hour, item.targetTime.minute);
+      }
+    }
+    return target;
+  }
+
+  int _daysLeft(DdayItem item) {
+    final now = DateTime.now();
+    final target = _effectiveTarget(item);
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(target.year, target.month, target.day);
+    return targetDay.difference(today).inDays;
+  }
+
+  Duration _timeLeft(DdayItem item) => _effectiveTarget(item).difference(DateTime.now());
+
+  double _progress(DdayItem item) {
+    // 실제 진행률입니다.
+    // 등록일시(createdAt)부터 목표일시까지의 전체 시간 중,
+    // 현재 얼마나 지났는지를 정확한 퍼센트로 표시합니다.
+    final now = DateTime.now();
+    final target = _effectiveTarget(item);
+    final total = target.difference(item.createdAt).inSeconds;
+    final elapsed = now.difference(item.createdAt).inSeconds;
+
+    if (total <= 0) return 1.0;
+    return (elapsed / total).clamp(0.0, 1.0);
+  }
+
+  String _shortDate(DateTime date) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(date.month)}.${two(date.day)}';
+  }
+
+  String _fullDate(DateTime date) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${date.year}.${two(date.month)}.${two(date.day)}';
+  }
+
+  String _timeText(TimeOfDay time) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(time.hour)}:${two(time.minute)}';
+  }
+
+  String _remainText(DdayItem item) {
+    final d = _timeLeft(item);
+    if (d.isNegative) return '오늘입니다';
+    final days = d.inDays;
+    final hours = d.inHours % 24;
+    final minutes = d.inMinutes % 60;
+    return '${days}일 ${hours}시간 ${minutes}분 남음';
+  }
+
+  String _eventMoodLabel(DdayItem item) {
+    final title = item.title.toLowerCase();
+    switch (item.icon) {
+      case 'cake':
+        return L.of(context).pick(ko: '생일까지', en: 'Birthday in', ja: '誕生日まで', vi: 'Đến sinh nhật');
+      case 'heart':
+        return L.of(context).pick(ko: '기념일까지', en: 'Anniversary in', ja: '記念日まで', vi: 'Đến kỷ niệm');
+      case 'flight':
+        return L.of(context).pick(ko: '여행까지', en: 'Trip in', ja: '旅行まで', vi: 'Đến chuyến đi');
+      case 'school':
+        return L.of(context).pick(ko: '중요한 날까지', en: 'School day in', ja: '大切な日まで', vi: 'Đến ngày quan trọng');
+      case 'work':
+        return L.of(context).pick(ko: '업무 일정까지', en: 'Work event in', ja: '仕事の予定まで', vi: 'Đến lịch công việc');
+      case 'gift':
+        return L.of(context).pick(ko: '선물할 날까지', en: 'Gift day in', ja: '贈り物の日まで', vi: 'Đến ngày tặng quà');
+      default:
+        if (title.contains('생일') || title.contains('birthday')) {
+          return L.of(context).pick(ko: '생일까지', en: 'Birthday in', ja: '誕生日まで', vi: 'Đến sinh nhật');
+        }
+        if (title.contains('기념') || title.contains('anniversary')) {
+          return L.of(context).pick(ko: '기념일까지', en: 'Anniversary in', ja: '記念日まで', vi: 'Đến kỷ niệm');
+        }
+        if (title.contains('여행') || title.contains('trip') || title.contains('travel')) {
+          return L.of(context).pick(ko: '여행까지', en: 'Trip in', ja: '旅行まで', vi: 'Đến chuyến đi');
+        }
+        return L.of(context).pick(ko: '기다리는 날까지', en: 'Counting down', ja: 'カウントダウン', vi: 'Đang đếm ngược');
+    }
+  }
+
+  String _dDayText(DdayItem item) {
+    final days = _daysLeft(item);
+    if (days == 0) return 'D-Day';
+    return 'D-${days.abs()}';
+  }
+
+  String _cardEmotionLine(DdayItem item) {
+    final d = _timeLeft(item);
+    if (d.isNegative) {
+      return L.of(context).pick(ko: '오늘이 바로 그날이에요', en: 'Today is the day', ja: '今日はその日です', vi: 'Hôm nay là ngày đó');
+    }
+    final hours = d.inHours % 24;
+    final minutes = d.inMinutes % 60;
+    final days = d.inDays;
+    if (days <= 0) {
+      return L.of(context).pick(
+        ko: '${hours}시간 ${minutes}분 남음',
+        en: '${hours}h ${minutes}m left',
+        ja: 'あと${hours}時間${minutes}分',
+        vi: 'Còn ${hours} giờ ${minutes} phút',
+      );
+    }
+    return L.of(context).pick(
+      ko: '${days}일 ${hours}시간 남음',
+      en: '${days}d ${hours}h left',
+      ja: 'あと${days}日${hours}時間',
+      vi: 'Còn ${days} ngày ${hours} giờ',
+    );
+  }
+
+  IconData _iconData(String key) {
+    switch (key) {
+      case 'heart':
+        return Icons.favorite;
+      case 'cake':
+        return Icons.cake;
+      case 'flight':
+        return Icons.flight_takeoff;
+      case 'school':
+        return Icons.school;
+      case 'work':
+        return Icons.work;
+      case 'home':
+        return Icons.home;
+      case 'pets':
+        return Icons.pets;
+      case 'music':
+        return Icons.music_note;
+      case 'gift':
+        return Icons.card_giftcard;
+      case 'camera':
+        return Icons.photo_camera;
+      case 'car':
+        return Icons.directions_car;
+      case 'cart':
+        return Icons.shopping_cart;
+      case 'coffee':
+        return Icons.local_cafe;
+      case 'fitness':
+        return Icons.fitness_center;
+      default:
+        return Icons.star;
+    }
+  }
+
+  String _repeatText(String type) => type == 'yearly' ? '매년 반복' : '반복 안 함';
+
+  String _alarmText(int minutes) {
+    switch (minutes) {
+      case -1:
+        return '알림 안 함';
+      case -2:
+        return '당일 오전 9시';
+      case 0:
+        return '정각 알림';
+      case 60:
+        return '1시간 전';
+      case 180:
+        return '3시간 전';
+      case 360:
+        return '6시간 전';
+      case 720:
+        return '12시간 전';
+      case 1440:
+        return '하루 전';
+      case 2880:
+        return '2일 전';
+      case 10080:
+        return '일주일 전';
+      default:
+        if (minutes > 0 && minutes % 1440 == 0) return '${minutes ~/ 1440}일 전';
+        if (minutes > 0 && minutes % 60 == 0) return '${minutes ~/ 60}시간 전';
+        return '알림 설정';
+    }
+  }
+
+  Future<void> _openEditor({DdayItem? item}) async {
+    await _refreshPermissionStatus();
+    if (!_notificationPermissionOk || !_exactAlarmPermissionOk) {
+      await _showPermissionGuide(
+        title: '알림 설정이 필요해요',
+        message: '일정 알림을 정확한 시간에 받으려면 알림 권한과 알람 및 리마인더 권한이 필요합니다.',
+        actionLabel: '설정 확인',
+        onAction: () async {
+          await NotificationService.requestNotificationPermission();
+          await NotificationService.requestExactAlarmPermission();
+          await AppSettings.openAppSettings();
+        },
+      );
+    }
+    final result = await Navigator.of(context).push<DdayItem>(
+      MaterialPageRoute(builder: (_) => EditPage(item: item)),
+    );
+    if (result != null) await _upsertItem(result);
+  }
+
+  void _showDetail(DdayItem item) {
+    showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('일정 삭제'),
-          content: Text('"${item.title}" 일정을 삭제할까요?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text(
-                '삭제',
-                style: TextStyle(
-                  color: Color(0xFFFF5A5F),
-                  fontWeight: FontWeight.w900,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        final color = Color(item.colorValue);
+        return SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              child: Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 30, offset: const Offset(0, 14))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(18)),
+                          child: Icon(_iconData(item.icon), color: color, size: 28),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                              const SizedBox(height: 4),
+                              Text(_repeatText(item.repeatType), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
+                            ],
+                          ),
+                        ),
+                        IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(color: const Color(0xFFF6F7FB), borderRadius: BorderRadius.circular(22)),
+                      child: Column(
+                        children: [
+                          Text('${_daysLeft(item)}일', style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                          const SizedBox(height: 4),
+                          Text(_remainText(item), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _detailRow(Icons.calendar_month, '날짜', _fullDate(_effectiveTarget(item))),
+                    _detailRow(Icons.schedule, '시간', _timeText(item.targetTime)),
+                    _detailRow(Icons.repeat, '반복', _repeatText(item.repeatType)),
+                    _detailRow(Icons.notifications_none_rounded, '알림', _alarmText(item.alarmMinutesBefore)),
+                    const SizedBox(height: 16),
+                    const Text('메모', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: const Color(0xFFF6F7FB), borderRadius: BorderRadius.circular(18)),
+                      child: Text(
+                        item.memo.trim().isEmpty ? '메모 없음' : item.memo.trim(),
+                        style: const TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w600, color: Color(0xFF374151)),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _openEditor(item: item);
+                            },
+                            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                            child: const Text('편집', style: TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _confirmDelete(item);
+                            },
+                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF111827), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                            child: const Text('삭제', style: TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         );
       },
     );
-
-    if (shouldDelete != true) return;
-
-    setState(() {
-      items.remove(item);
-    });
-
-    await saveItems();
   }
 
-  Future<void> duplicateItem(DdayItem item) async {
-    final copied = item.copyWith(
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: const Color(0xFF6B7280)),
+          const SizedBox(width: 10),
+          Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
+          const Spacer(),
+          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmDelete(DdayItem item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('삭제할까요?'),
+        content: Text('「${item.title}」 일정을 삭제합니다.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
+        ],
+      ),
+    );
+    if (ok == true) await _deleteItem(item);
+  }
+
+  Future<void> _copyItem(DdayItem item) async {
+    final copy = item.copyWith(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
       title: '${item.title} 복사본',
       createdAt: DateTime.now(),
     );
-
-    setState(() {
-      items.add(copied);
-      sortItems();
-    });
-
-    await saveItems();
+    await _upsertItem(copy);
   }
 
-  void showComingSoon(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+  Future<void> _shareItem(DdayItem item) async {
+    final target = _effectiveTarget(item);
+    final repeat = item.repeatType == 'yearly' ? ' (매년)' : '';
+    final text = '${item.title}\n${_fullDate(target)}$repeat\n\nD-${_daysLeft(item)}일\n${_remainText(item)}';
+    await Share.share(text);
+  }
+
+  void _showItemMenu(DdayItem item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(26)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _menuTile(Icons.ios_share, '공유', () {
+                Navigator.pop(context);
+                _shareItem(item);
+              }),
+              _menuTile(Icons.edit, '편집', () {
+                Navigator.pop(context);
+                _openEditor(item: item);
+              }),
+              _menuTile(Icons.copy, '복사본 만들기', () {
+                Navigator.pop(context);
+                _copyItem(item);
+              }),
+              _menuTile(Icons.delete_outline, '삭제', () {
+                Navigator.pop(context);
+                _confirmDelete(item);
+              }, danger: true),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Future<void> handleItemMenu(String value, DdayItem item) async {
-    if (value == 'share') {
-      showComingSoon('공유 기능은 다음 단계에서 연결합니다.');
-    } else if (value == 'edit') {
-      await openEditScreen(item);
-    } else if (value == 'duplicate') {
-      await duplicateItem(item);
-    } else if (value == 'delete') {
-      await deleteItem(item);
-    }
+  Widget _menuTile(IconData icon, String text, VoidCallback onTap, {bool danger = false}) {
+    return ListTile(
+      leading: Icon(icon, color: danger ? Colors.redAccent : const Color(0xFF111827)),
+      title: Text(text, style: TextStyle(fontWeight: FontWeight.w700, color: danger ? Colors.redAccent : const Color(0xFF111827))),
+      onTap: onTap,
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopHeader(),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 96),
+  void _showWidgetPlanSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  _buildNoticeArea(),
-                  const SizedBox(height: 18),
-                  _buildSectionTitle(),
-                  const SizedBox(height: 12),
-                  if (items.isEmpty) _buildEmptyState() else _buildCardArea(),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(color: const Color(0xFFEEF4FF), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.widgets_outlined, color: Color(0xFF2F80ED)),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text('홈화면 위젯 다음 단계', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                  ),
                 ],
               ),
-            ),
-          ],
+              const SizedBox(height: 14),
+              const Text(
+                '현재 앱 내부 알림 기능은 안정화했고, 다음 작업은 Android 홈 화면에 붙는 네이티브 위젯입니다.',
+                style: TextStyle(fontSize: 14.5, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+              ),
+              const SizedBox(height: 14),
+              _widgetPlanRow('1', 'home_widget 패키지 추가', 'Flutter 데이터와 Android 위젯을 연결'),
+              _widgetPlanRow('2', '최근 D-day 1개 저장', 'SharedPreferences 데이터를 위젯용으로 별도 저장'),
+              _widgetPlanRow('3', 'Android 위젯 레이아웃 제작', '1x1 / 2x1 크기부터 안전하게 시작'),
+              _widgetPlanRow('4', '일정 저장·삭제 시 위젯 갱신', '앱을 열지 않아도 최신 D-day 표시'),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2F80ED),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('확인', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: openAddScreen,
-        backgroundColor: const Color(0xFF3182F6),
-        foregroundColor: Colors.white,
-        elevation: 6,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: const Icon(Icons.add_rounded, size: 34),
       ),
     );
   }
 
-  Widget _buildTopHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF5F7FB),
-      ),
+  Widget _widgetPlanRow(String step, String title, String desc) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 14,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.menu_rounded,
-              color: Color(0xFF111827),
-              size: 29,
-            ),
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
+            child: Center(child: Text(step, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF111827)))),
           ),
-          const SizedBox(width: 14),
-          const Expanded(
+          const SizedBox(width: 10),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '카운트다운',
-                  style: TextStyle(
-                    color: Color(0xFF111827),
-                    fontSize: 28,
-                    height: 1.05,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                SizedBox(height: 5),
-                Text(
-                  '소중한 날을 놓치지 마세요',
-                  style: TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                const SizedBox(height: 2),
+                Text(desc, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
               ],
             ),
-          ),
-          PopupMenuButton<String>(
-            icon: Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 14,
-                    offset: const Offset(0, 7),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.more_horiz_rounded,
-                color: Color(0xFF111827),
-                size: 29,
-              ),
-            ),
-            onSelected: (value) {
-              showComingSoon('이 메뉴는 다음 단계에서 연결합니다.');
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'settings',
-                child: Text('설정'),
-              ),
-              PopupMenuItem(
-                value: 'help',
-                child: Text('도움말'),
-              ),
-            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildNoticeArea() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildNoticeCard(
-            title: '첫 일정을 등록해보세요',
-            body: '생일, 시험, 여행처럼 중요한 날을 한눈에 관리할 수 있어요.',
-            icon: Icons.add_circle_outline_rounded,
-            backgroundColor: const Color(0xFF3182F6),
-            foregroundColor: Colors.white,
+  void _showAppMenu() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final media = MediaQuery.of(sheetContext);
+        final isLandscape = media.orientation == Orientation.landscape;
+        final maxHeight = media.size.height * (isLandscape ? 0.58 : 0.82);
+
+        Widget compactTile(IconData icon, String text, VoidCallback onTap) {
+          return InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isLandscape ? 14 : 18,
+                vertical: isLandscape ? 8 : 13,
+              ),
+              child: Row(
+                children: [
+                  Icon(icon, size: isLandscape ? 20 : 24, color: const Color(0xFF111827)),
+                  SizedBox(width: isLandscape ? 12 : 16),
+                  Expanded(
+                    child: Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: isLandscape ? 14.5 : 16,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF111827),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Container(
+                width: double.infinity,
+                margin: EdgeInsets.fromLTRB(16, 0, 16, isLandscape ? 8 : 16),
+                padding: EdgeInsets.symmetric(vertical: isLandscape ? 8 : 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(isLandscape ? 18 : 24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 26,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      compactTile(Icons.notifications_active_rounded, '즉시 테스트 알림', () async {
+                        Navigator.pop(sheetContext);
+                        await NotificationService.showNow();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('즉시 테스트 알림을 보냈습니다.')));
+                      }),
+                      compactTile(Icons.timer_rounded, '5초 뒤 예약 테스트', () async {
+                        Navigator.pop(sheetContext);
+                        final ok = await NotificationService.schedule(
+                          id: 999002,
+                          title: '예약 테스트 알림',
+                          body: '5초 뒤 예약 알림이 정상 작동했습니다.',
+                          scheduledAt: DateTime.now().add(const Duration(seconds: 5)),
+                          payload: '__test__',
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(ok ? '5초 뒤 예약 테스트를 걸었습니다.' : '예약 테스트 등록에 실패했습니다. 알림/정확한 알람 권한을 확인해주세요.')),
+                        );
+                      }),
+                      compactTile(Icons.widgets_outlined, '홈화면 위젯 설계 보기', () {
+                        Navigator.pop(sheetContext);
+                        _showWidgetPlanSheet();
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildNoticeCard(
-            title: '위젯 준비 중',
-            body: '홈 화면에서 바로 볼 수 있는 위젯 기능을 곧 추가할 예정이에요.',
-            icon: Icons.widgets_rounded,
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF111827),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 
-  Widget _buildNoticeCard({
-    required String title,
-    required String body,
-    required IconData icon,
-    required Color backgroundColor,
-    required Color foregroundColor,
-  }) {
-    final isWhite = backgroundColor == Colors.white;
+  @override
+  Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.dark),
+      child: Scaffold(
+        floatingActionButton: FloatingActionButton.large(
+          onPressed: () => _openEditor(),
+          backgroundColor: const Color(0xFF2F80ED),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          child: const Icon(Icons.add, size: 36),
+        ),
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              HapticFeedback.lightImpact();
+              await _refreshPermissionStatus();
+              await _loadAll();
+              _refreshNow();
+            },
+            displacement: 36,
+            edgeOffset: 6,
+            color: const Color(0xFF2F80ED),
+            backgroundColor: Colors.white,
+            child: CustomScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+              SliverPersistentHeader(
+                pinned: false,
+                floating: true,
+                delegate: FixedHeaderDelegate(
+                  height: 106,
+                  child: _header(),
+                ),
+              ),
+              SliverToBoxAdapter(child: _permissionStatusCard()),
+              SliverToBoxAdapter(child: _notices()),
+              SliverToBoxAdapter(child: _sectionTitle()),
+              if (_items.isEmpty) SliverFillRemaining(hasScrollBody: false, child: _empty()) else _isCardView ? _cardGrid() : _listView(),
+                const SliverToBoxAdapter(child: SizedBox(height: 110)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
+  Widget _header() {
     return Container(
-      height: 154,
-      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F6FA).withOpacity(0.96),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.035), blurRadius: 16, offset: const Offset(0, 8))],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 12, 22, 10),
+        child: Row(
+          children: [
+            _roundButton(Icons.menu, () {}),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(L.of(context).appTitle, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Color(0xFF111827), letterSpacing: -0.8)),
+                  SizedBox(height: 2),
+                  Text(L.of(context).subtitle, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+                ],
+              ),
+            ),
+            _roundButton(Icons.more_horiz, _showAppMenu),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _roundButton(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      elevation: 0,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: SizedBox(width: 46, height: 46, child: Icon(icon, size: 25, color: const Color(0xFF111827))),
+      ),
+    );
+  }
+
+  Widget _permissionStatusCard() {
+    final hasCriticalIssue = !_notificationPermissionOk;
+    final hasWarning = !hasCriticalIssue && !_exactAlarmPermissionOk;
+    final bgColor = hasCriticalIssue
+        ? const Color(0xFFFFE7E7)
+        : hasWarning
+            ? const Color(0xFFFFF4DE)
+            : const Color(0xFFEAF8EF);
+    final borderColor = hasCriticalIssue
+        ? const Color(0xFFFCA5A5)
+        : hasWarning
+            ? const Color(0xFFFCD34D)
+            : const Color(0xFFBBF7D0);
+    final accentColor = hasCriticalIssue
+        ? const Color(0xFFEF4444)
+        : hasWarning
+            ? const Color(0xFFF59E0B)
+            : const Color(0xFF16A34A);
+    final statusText = hasCriticalIssue
+        ? '설정 필요'
+        : hasWarning
+            ? '주의'
+            : '핵심 정상';
+    final subtitle = hasCriticalIssue
+        ? '알림 권한이 꺼져 있어요. 눌러서 확인하세요.'
+        : hasWarning
+            ? '정확한 알람 권한을 확인해주세요.'
+            : '기본 알림과 정확한 알람이 정상입니다.';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => _permissionCardExpanded = !_permissionCardExpanded),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: EdgeInsets.fromLTRB(16, 13, 16, _permissionCardExpanded ? 14 : 13),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderColor),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.025), blurRadius: 18, offset: const Offset(0, 8))],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.72), borderRadius: BorderRadius.circular(10)),
+                      child: Icon(Icons.notifications_active_rounded, color: accentColor, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(L.of(context).permissionTitle, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                          const SizedBox(height: 2),
+                          Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.75), borderRadius: BorderRadius.circular(999)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(width: 7, height: 7, decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle)),
+                          const SizedBox(width: 6),
+                          Text(statusText, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: accentColor)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(_permissionCardExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: const Color(0xFF6B7280)),
+                  ],
+                ),
+                if (_permissionCardExpanded) ...[
+                  const SizedBox(height: 12),
+                  Container(height: 1, color: Colors.black.withOpacity(0.06)),
+                  const SizedBox(height: 8),
+                  _permissionRow(
+                    icon: Icons.notifications_none_rounded,
+                    title: '기본 알림',
+                    ok: _notificationPermissionOk,
+                    okText: '정상',
+                    badText: '설정 필요',
+                    onTap: () => _showPermissionGuide(
+                      title: '기본 알림 권한',
+                      message: 'D-day 일정 알림을 받으려면 앱 알림 권한이 켜져 있어야 합니다.',
+                      actionLabel: '알림 권한 허용',
+                      onAction: () async {
+                        await NotificationService.requestNotificationPermission();
+                        await AppSettings.openAppSettings();
+                      },
+                    ),
+                  ),
+                  _permissionRow(
+                    icon: Icons.alarm_rounded,
+                    title: '정확한 알람',
+                    ok: _exactAlarmPermissionOk,
+                    okText: '정상',
+                    badText: '설정 필요',
+                    onTap: () => _showPermissionGuide(
+                      title: '알람 및 리마인더 권한',
+                      message: '정확한 시간에 예약 알림을 울리려면 “알람 및 리마인더” 권한이 필요합니다.',
+                      actionLabel: '설정 열기',
+                      onAction: () async {
+                        await NotificationService.requestExactAlarmPermission();
+                        await AppSettings.openAppSettings();
+                      },
+                    ),
+                  ),
+                  _permissionRow(
+                    icon: Icons.battery_saver_outlined,
+                    title: '배터리 최적화',
+                    ok: true,
+                    okText: '정상',
+                    badText: '안내',
+                    onTap: () => _showPermissionGuide(
+                      title: '배터리 최적화 해제 안내',
+                      message: '일부 휴대폰은 배터리 절약 기능 때문에 예약 알림이 늦게 울릴 수 있습니다. 앱 정보 또는 배터리 설정에서 제한 없음 / 최적화 제외로 설정하면 더 안정적입니다.',
+                      actionLabel: '앱 설정 열기',
+                      onAction: () => AppSettings.openAppSettings(),
+                    ),
+                    muted: true,
+                  ),
+                  _permissionRow(
+                    icon: Icons.lock_outline_rounded,
+                    title: '잠금화면 표시',
+                    ok: true,
+                    okText: '확인 필요',
+                    badText: '확인 필요',
+                    onTap: () => _showPermissionGuide(
+                      title: '잠금화면 알림 표시',
+                      message: '잠금화면 알림은 앱에서 직접 켤 수 없고 휴대폰 설정에서 켜야 합니다. 경로 예시: 설정 → 알림 → 잠금화면 알림 또는 설정 → 잠금화면 → 알림',
+                      actionLabel: '앱 설정 열기',
+                      onAction: () => AppSettings.openAppSettings(),
+                    ),
+                    muted: true,
+                  ),
+                  _permissionRow(
+                    icon: Icons.dark_mode_outlined,
+                    title: 'AOD / 대기화면',
+                    ok: true,
+                    okText: '확인 필요',
+                    badText: '확인 필요',
+                    onTap: () => _showPermissionGuide(
+                      title: 'AOD / 대기화면 표시',
+                      message: 'Always On Display 표시는 기기 설정에 따라 달라집니다. 휴대폰 설정에서 AOD와 잠금화면 알림 표시가 켜져 있는지 확인해주세요.',
+                      actionLabel: '앱 설정 열기',
+                      onAction: () => AppSettings.openAppSettings(),
+                    ),
+                    muted: true,
+                  ),
+                  _permissionRow(
+                    icon: Icons.widgets_outlined,
+                    title: '홈화면 위젯',
+                    ok: false,
+                    okText: '정상',
+                    badText: '곧 제공',
+                    onTap: () => _showPermissionGuide(
+                      title: '홈화면 위젯',
+                      message: '홈화면에서 바로 보는 D-day 위젯은 다음 단계에서 추가할 기능입니다. 현재는 알림 기능을 먼저 안정화했습니다.',
+                      actionLabel: '확인',
+                      onAction: () async {},
+                    ),
+                    muted: true,
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _refreshPermissionStatus,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('상태 새로고침', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _permissionRow({
+    required IconData icon,
+    required String title,
+    required bool ok,
+    required String okText,
+    required String badText,
+    required VoidCallback onTap,
+    bool muted = false,
+  }) {
+    final statusColor = muted ? const Color(0xFFF59E0B) : (ok ? const Color(0xFF16A34A) : const Color(0xFFEF4444));
+    final statusText = muted ? badText : (ok ? okText : badText);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: const Color(0xFF6B7280)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Color(0xFF111827)))),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(color: statusColor.withOpacity(0.10), borderRadius: BorderRadius.circular(999)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 7, height: 7, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                  const SizedBox(width: 5),
+                  Text(statusText, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: statusColor)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF9CA3AF)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPermissionGuide({
+    required String title,
+    required String message,
+    required String actionLabel,
+    required Future<void> Function() onAction,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(color: const Color(0xFFEEF4FF), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.info_outline_rounded, color: Color(0xFF2F80ED)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827)))),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(message, style: const TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563))),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                      child: const Text('나중에', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        await onAction();
+                        await Future<void>.delayed(const Duration(milliseconds: 300));
+                        await _refreshPermissionStatus();
+                      },
+                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2F80ED), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                      child: Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _notices() {
+    final notices = <Widget>[];
+
+    // 공지카드는 개인 일정 카드처럼 2개가 가로로 나란히 보이게 합니다.
+    if (!_hideIntroNotice) {
+      notices.add(_noticeCard(
+        L.of(context).firstEventTitle,
+        L.of(context).firstEventSubtitle,
+        Icons.event_available,
+        () => _setNoticeHidden(_hideIntroKey, true),
+        backgroundColor: const Color(0xFFFFF7D6),
+        iconBackgroundColor: const Color(0xFFFFF1B8),
+        iconColor: const Color(0xFFF59E0B),
+      ));
+    }
+    if (!_hideWidgetNotice) {
+      notices.add(_noticeCard(
+        L.of(context).widgetNoticeTitle,
+        L.of(context).widgetNoticeSubtitle,
+        Icons.widgets,
+        () => _setNoticeHidden(_hideWidgetKey, true),
+        backgroundColor: const Color(0xFFEAF7F0),
+        iconBackgroundColor: const Color(0xFFDDF3E8),
+        iconColor: const Color(0xFF22C55E),
+      ));
+    }
+
+    if (notices.isEmpty) return const SizedBox.shrink();
+
+    if (notices.length == 1) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
+        child: SizedBox(height: 86, child: notices.first),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: SizedBox(height: 86, child: notices[0])),
+          const SizedBox(width: 12),
+          Expanded(child: SizedBox(height: 86, child: notices[1])),
+        ],
+      ),
+    );
+  }
+
+  Widget _noticeCard(
+    String title,
+    String subtitle,
+    IconData icon,
+    VoidCallback onClose, {
+    Color backgroundColor = Colors.white,
+    Color iconBackgroundColor = const Color(0xFFEEF4FF),
+    Color iconColor = const Color(0xFF2F80ED),
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 9),
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(24),
-        border: isWhite
-            ? Border.all(
-                color: const Color(0xFFE5EAF2),
-                width: 1,
-              )
-            : null,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isWhite ? 0.035 : 0.09),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.018), blurRadius: 12, offset: const Offset(0, 5)),
         ],
       ),
       child: Stack(
         children: [
           Positioned(
-            right: -4,
-            top: -4,
-            child: Icon(
-              icon,
-              color: foregroundColor.withOpacity(isWhite ? 0.14 : 0.22),
-              size: 58,
+            top: 0,
+            left: 0,
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(color: iconBackgroundColor, borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: iconColor, size: 17),
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Positioned(
+            top: -5,
+            right: -6,
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                onPressed: onClose,
+                icon: const Icon(Icons.close, color: Color(0xFF9CA3AF), size: 18),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            top: 34,
+            right: 2,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12.6, height: 1.05, fontWeight: FontWeight.w700, color: Color(0xFF111827)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10.5, height: 1.16, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 12, 22, 10),
+      child: Row(
+        children: [
+          Expanded(child: Text(L.of(context).myEvents, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w700, color: Color(0xFF111827), letterSpacing: -0.5))),
+          OutlinedButton.icon(
+            onPressed: _showSortPicker,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: Color(0xFFE5E7EB)),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            icon: const Icon(Icons.tune_rounded, color: Color(0xFF2F80ED), size: 18),
+            label: Text(_sortText(_sortType), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: _toggleViewMode,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: Color(0xFFE5E7EB)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            icon: Icon(_isCardView ? Icons.view_list_rounded : Icons.grid_view_rounded, color: const Color(0xFF2F80ED), size: 19),
+            label: Text(_isCardView ? L.of(context).list : L.of(context).card, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _empty() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(34),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 86, height: 86, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30)), child: const Icon(Icons.add_task, size: 42, color: Color(0xFF9CA3AF))),
+            const SizedBox(height: 18),
+            Text(L.of(context).emptyTitle, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text(L.of(context).emptySubtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cardGrid() {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: isLandscape ? 36 : 24),
+      sliver: SliverGrid(
+        delegate: SliverChildBuilderDelegate((context, index) => _ddayCard(_items[index]), childCount: _items.length),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 18,
+          mainAxisSpacing: isLandscape ? 14 : 18,
+          mainAxisExtent: isLandscape ? 132 : null,
+          childAspectRatio: isLandscape ? 2.35 : 0.66,
+        ),
+      ),
+    );
+  }
+
+  Widget _ddayCard(DdayItem item) {
+    final color = Color(item.colorValue);
+    final days = _daysLeft(item);
+    final progress = _progress(item);
+    final left = _timeLeft(item);
+    final hours = left.inHours % 24;
+    final minutes = left.inMinutes % 60;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
+    final radius = isLandscape ? 14.0 : 18.0;
+    final cardPadding = isLandscape
+        ? const EdgeInsets.fromLTRB(12, 8, 10, 8)
+        : const EdgeInsets.fromLTRB(14, 13, 12, 12);
+    final ddaySize = isLandscape ? 27.0 : 32.0;
+    final titleSize = isLandscape ? 12.8 : 13.2;
+    final subtitleSize = isLandscape ? 10.3 : 11.2;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(radius),
+      clipBehavior: Clip.antiAlias,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.035),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: InkWell(
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          hoverColor: Colors.transparent,
+          borderRadius: BorderRadius.circular(radius),
+          onTap: () => _showDetail(item),
+          child: Stack(
             children: [
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: foregroundColor,
-                  fontSize: 16,
-                  height: 1.2,
-                  fontWeight: FontWeight.w900,
+              Padding(
+                padding: cardPadding,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: isLandscape ? 26 : 30,
+                          height: isLandscape ? 26 : 30,
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.11),
+                            borderRadius: BorderRadius.circular(isLandscape ? 8 : 10),
+                          ),
+                          child: Icon(_iconData(item.icon), size: isLandscape ? 15 : 17, color: color),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.title,
+                                  maxLines: isLandscape ? 1 : 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: titleSize,
+                                    height: 1.12,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF111827),
+                                    letterSpacing: -0.35,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        _fullDate(_effectiveTarget(item)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: subtitleSize,
+                                          fontWeight: FontWeight.w600,
+                                          color: const Color(0xFF7C8493),
+                                        ),
+                                      ),
+                                    ),
+                                    if (item.repeatType == 'yearly') ...[
+                                      const SizedBox(width: 5),
+                                      Container(
+                                        padding: EdgeInsets.symmetric(horizontal: isLandscape ? 4 : 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: color.withOpacity(0.10),
+                                          borderRadius: BorderRadius.circular(7),
+                                        ),
+                                        child: Text(
+                                          L.of(context).repeatYearly,
+                                          style: TextStyle(fontSize: isLandscape ? 8.2 : 9.0, fontWeight: FontWeight.w700, color: color),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: isLandscape ? 7 : 14),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _dDayText(item),
+                        style: TextStyle(
+                          fontSize: ddaySize,
+                          height: 0.95,
+                          fontWeight: FontWeight.w800,
+                          color: color,
+                          letterSpacing: -1.1,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: isLandscape ? 2 : 4),
+                    Text(
+                      _cardEmotionLine(item),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: isLandscape ? 10.4 : 12.2,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF4B5563),
+                        letterSpacing: -0.25,
+                      ),
+                    ),
+                    SizedBox(height: isLandscape ? 5 : 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        minHeight: isLandscape ? 4 : 6,
+                        value: progress.clamp(0.0, 1.0),
+                        backgroundColor: const Color(0xFFEFF3F9),
+                        valueColor: AlwaysStoppedAnimation<Color>(color.withOpacity(0.88)),
+                      ),
+                    ),
+                    if (!isLandscape) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.065),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.access_time_rounded, size: 13, color: color.withOpacity(0.76)),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  _cardEmotionLine(item),
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontSize: 10.6,
+                                  fontWeight: FontWeight.w700,
+                                  color: color.withOpacity(0.86),
+                                  letterSpacing: -0.25,
+                                ),
+                              ),
+                            ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: Text(
-                  body,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: foregroundColor.withOpacity(isWhite ? 0.62 : 0.88),
-                    fontSize: 13,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
+              Positioned(
+                top: 5,
+                right: 3,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _showItemMenu(item),
+                  child: const SizedBox(
+                    width: 26,
+                    height: 30,
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: Icon(Icons.more_vert, color: Color(0xFF9CA3AF), size: 19),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildSectionTitle() {
-    return Row(
-      children: [
-        const Expanded(
-          child: Text(
-            '내 일정',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF111827),
-            ),
-          ),
-        ),
-        GestureDetector(
-          onTap: () {
-            setState(() {
-              viewMode = viewMode == ViewMode.card ? ViewMode.list : ViewMode.card;
-            });
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
+  Widget _listView() {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      sliver: SliverList.builder(
+        itemCount: _items.length,
+        itemBuilder: (context, index) {
+          final item = _items[index];
+          final color = Color(item.colorValue);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Material(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: const Color(0xFFE5EAF2),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  viewMode == ViewMode.card
-                      ? Icons.grid_view_rounded
-                      : Icons.list_rounded,
-                  size: 17,
-                  color: const Color(0xFF3182F6),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  viewMode == ViewMode.card ? '카드' : '목록',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF111827),
-                    fontWeight: FontWeight.w800,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _showDetail(item),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Row(
+                    children: [
+                      Container(width: 46, height: 46, decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(14)), child: Icon(_iconData(item.icon), color: color, size: 24)),
+                      const SizedBox(width: 14),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, letterSpacing: -0.2)), const SizedBox(height: 4), Text('${_fullDate(_effectiveTarget(item))} · ${_remainText(item)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF6B7280)))])),
+                      Text('${_daysLeft(item)}일', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.4)),
+                      IconButton(onPressed: () => _showItemMenu(item), icon: const Icon(Icons.more_vert, color: Color(0xFF9CA3AF))),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ],
+          );
+        },
+      ),
     );
   }
+}
 
-  Widget _buildCardArea() {
-    if (viewMode == ViewMode.list) {
-      return Column(
-        children: items.map(_buildListCard).toList(),
+class FixedHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final double height;
+  final Widget child;
+
+  const FixedHeaderDelegate({required this.height, required this.child});
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return SizedBox.expand(child: child);
+  }
+
+  @override
+  bool shouldRebuild(covariant FixedHeaderDelegate oldDelegate) {
+    return oldDelegate.height != height || oldDelegate.child != child;
+  }
+}
+
+class RingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+
+  RingPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - 8;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final safeProgress = progress.clamp(0.0, 1.0);
+
+    final bg = Paint()
+      ..color = const Color(0xFFEFF3F9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round;
+
+    final fg = Paint()
+      ..color = color.withOpacity(0.82)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+
+    final endFade = Paint()
+      ..color = Colors.white.withOpacity(0.72)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, radius, bg);
+
+    // 실제 진행률은 그대로 사용하되, 등록 직후처럼 아주 작은 진행률도
+    // 사용자가 알아볼 수 있도록 최소한의 색 점은 항상 보여줍니다.
+    if (safeProgress >= 0.0) {
+      final sweep = math.pi * 2 * safeProgress;
+      if (sweep > 0.02) {
+        canvas.drawArc(rect, -math.pi / 2, sweep, false, fg);
+      }
+
+      if (sweep > 0.35) {
+        canvas.drawArc(rect, -math.pi / 2 + sweep - 0.16, 0.14, false, endFade);
+      }
+
+      final angle = -math.pi / 2 + sweep;
+      final dot = Offset(
+        center.dx + math.cos(angle) * radius,
+        center.dy + math.sin(angle) * radius,
       );
+      canvas.drawCircle(dot, 6.0, Paint()..color = Colors.white);
+      canvas.drawCircle(dot, 4.4, Paint()..color = color);
     }
+  }
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: items.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
-        childAspectRatio: 0.70,
-      ),
-      itemBuilder: (context, index) {
-        return _buildDdayCard(items[index]);
+  @override
+  bool shouldRepaint(covariant RingPainter oldDelegate) => oldDelegate.progress != progress || oldDelegate.color != color;
+}
+class EditPage extends StatefulWidget {
+  final DdayItem? item;
+  const EditPage({super.key, this.item});
+
+  @override
+  State<EditPage> createState() => _EditPageState();
+}
+
+class _EditPageState extends State<EditPage> {
+  static const _ink = Color(0xFF111827);
+  static const _muted = Color(0xFF6B7280);
+  static const _softIcon = Color(0xFF9CA3AF);
+  static const _line = Color(0xFFE5E7EB);
+  static const _saveBlue = Color(0xFF2563EB);
+
+  late final TextEditingController _titleController;
+  late final TextEditingController _memoController;
+  late DateTime _date;
+  late TimeOfDay _time;
+  late String _repeatType;
+  late String _icon;
+  late Color _color;
+  late int _alarmMinutesBefore;
+  late bool _alarmEnabled;
+
+  final _icons = const [
+    'star', 'heart', 'cake', 'flight', 'school',
+    'work', 'home', 'pets', 'music', 'gift',
+    'camera', 'car', 'cart', 'coffee', 'fitness',
+  ];
+
+  final _colors = const [
+    Color(0xFFEF4444), Color(0xFFF97316), Color(0xFFF59E0B), Color(0xFF22C55E), Color(0xFF0E7490),
+    Color(0xFF2F80ED), Color(0xFF1D4ED8), Color(0xFF7A3E91), Color(0xFFEC4899), Color(0xFF8B5E3C),
+    Color(0xFF64748B), Color(0xFF111827), Color(0xFF6B8E23), Color(0xFF22C1C3), Color(0xFF6D5DF6),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final item = widget.item;
+    _titleController = TextEditingController(text: item?.title ?? '');
+    _memoController = TextEditingController(text: item?.memo ?? '');
+    _date = item?.targetDate ?? DateTime.now().add(const Duration(days: 1));
+    _time = item?.targetTime ?? const TimeOfDay(hour: 9, minute: 0);
+    _repeatType = item?.repeatType ?? 'none';
+    _icon = item?.icon ?? 'star';
+    _color = Color(item?.colorValue ?? const Color(0xFF7A3E91).value);
+    _alarmMinutesBefore = item?.alarmMinutesBefore ?? 1440;
+    _alarmEnabled = _alarmMinutesBefore != -1;
+    if (_alarmMinutesBefore == -1) {
+      _alarmMinutesBefore = 1440;
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _memoController.dispose();
+    super.dispose();
+  }
+
+  IconData _iconData(String key) {
+    switch (key) {
+      case 'heart':
+        return Icons.favorite;
+      case 'cake':
+        return Icons.cake;
+      case 'flight':
+        return Icons.flight_takeoff;
+      case 'school':
+        return Icons.school;
+      case 'work':
+        return Icons.work;
+      case 'home':
+        return Icons.home;
+      case 'pets':
+        return Icons.pets;
+      case 'music':
+        return Icons.music_note;
+      case 'gift':
+        return Icons.card_giftcard;
+      case 'camera':
+        return Icons.photo_camera;
+      case 'car':
+        return Icons.directions_car;
+      case 'cart':
+        return Icons.shopping_cart;
+      case 'coffee':
+        return Icons.local_cafe;
+      case 'fitness':
+        return Icons.fitness_center;
+      default:
+        return Icons.star;
+    }
+  }
+
+  String _fullDate(DateTime date) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${date.year}.${two(date.month)}.${two(date.day)}';
+  }
+
+  String _timeText(TimeOfDay time) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(time.hour)}:${two(time.minute)}';
+  }
+
+  String _repeatText(String type) => type == 'yearly' ? '매년 반복' : '반복 안 함';
+
+  String _alarmText(int minutes) {
+    switch (minutes) {
+      case -1:
+        return '알림 안 함';
+      case -2:
+        return '당일 오전 9시';
+      case 0:
+        return '정각 알림';
+      case 60:
+        return '1시간 전';
+      case 180:
+        return '3시간 전';
+      case 360:
+        return '6시간 전';
+      case 720:
+        return '12시간 전';
+      case 1440:
+        return '하루 전';
+      case 2880:
+        return '2일 전';
+      case 10080:
+        return '일주일 전';
+      default:
+        if (minutes > 0 && minutes % 1440 == 0) return '${minutes ~/ 1440}일 전';
+        if (minutes > 0 && minutes % 60 == 0) return '${minutes ~/ 60}시간 전';
+        return '알림 설정';
+    }
+  }
+
+  int _daysUntil() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(_date.year, _date.month, _date.day);
+    return target.difference(today).inDays;
+  }
+
+  String _editDdayText() {
+    final days = _daysUntil();
+    if (days == 0) return 'D-Day';
+    return 'D-${days.abs()}';
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(context: context, initialTime: _time);
+    if (picked != null) setState(() => _time = picked);
+  }
+
+  void _showRepeatPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          child: Center(
+            child: Container(
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.14),
+                    blurRadius: 32,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('반복 설정', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: _ink)),
+                  const SizedBox(height: 10),
+                  _repeatOption('none', '반복 안 함', '한 번만 카운트다운'),
+                  _repeatOption('yearly', '매년 반복', '생일, 결혼기념일처럼 매년 반복'),
+                ],
+              ),
+            ),
+          ),
+        );
       },
     );
   }
 
-  Widget _buildDdayCard(DdayItem item) {
-    final dday = getDday(item);
-    final isToday = dday == 0;
-    final progress = getProgressValue(item).clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(15, 15, 15, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: const Color(0xFFE9EEF6),
-          width: 1,
+  Widget _repeatOption(String value, String label, String desc) {
+    final selected = _repeatType == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        setState(() => _repeatType = value);
+        Navigator.pop(context);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 13),
+        child: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: selected ? _ink : _line, width: selected ? 7 : 2),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink)),
+                  const SizedBox(height: 3),
+                  Text(desc, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _muted)),
+                ],
+              ),
+            ),
+          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.045),
-            blurRadius: 18,
-            offset: const Offset(0, 9),
-          ),
-        ],
       ),
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        height: 1.1,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF111827),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 28),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${item.targetDate.year}.${item.targetDate.month.toString().padLeft(2, '0')}.${item.targetDate.day.toString().padLeft(2, '0')}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF7B8494),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (item.isYearly)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: item.color.withOpacity(0.10),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        '매년',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: item.color,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const Spacer(),
-              Center(
-                child: SizedBox(
-                  width: 116,
-                  height: 116,
-                  child: Stack(
-                    alignment: Alignment.center,
+    );
+  }
+
+  void _showAlarmPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, modalSetState) {
+            void updateAlarmState(VoidCallback change) {
+              setState(change);
+              modalSetState(() {});
+            }
+
+            Widget alarmOption(int value, String label, String desc) {
+              final selected = _alarmEnabled && _alarmMinutesBefore == value;
+              return InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () {
+                  updateAlarmState(() {
+                    _alarmEnabled = true;
+                    _alarmMinutesBefore = value;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                  child: Row(
                     children: [
-                      SizedBox(
-                        width: 116,
-                        height: 116,
-                        child: CircularProgressIndicator(
-                          value: progress,
-                          strokeWidth: 8,
-                          backgroundColor: const Color(0xFFE9EEF6),
-                          valueColor: AlwaysStoppedAnimation<Color>(item.color),
-                          strokeCap: StrokeCap.round,
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: selected ? _saveBlue : _line, width: selected ? 7 : 2),
                         ),
                       ),
-                      Container(
-                        width: 90,
-                        height: 90,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFD),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 2,
-                          ),
-                        ),
+                      const SizedBox(width: 13),
+                      Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                isToday
-                                    ? 'D-Day'
-                                    : dday > 0
-                                        ? '${dday}일'
-                                        : '+${dday.abs()}일',
-                                style: const TextStyle(
-                                  fontSize: 25,
-                                  height: 1,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF111827),
-                                  letterSpacing: -1,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              isToday ? '오늘' : getSmallTimeText(item),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Color(0xFF6B7280),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
+                            Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink)),
+                            const SizedBox(height: 3),
+                            Text(desc, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _muted)),
                           ],
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                isToday ? '오늘입니다' : getRemainTimeText(item),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFF4B5563),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          Positioned(
-            top: -8,
-            right: -12,
-            child: PopupMenuButton<String>(
-              icon: const Icon(
-                Icons.more_vert_rounded,
-                color: Color(0xFF9AA4B2),
-                size: 24,
-              ),
-              onSelected: (value) => handleItemMenu(value, item),
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'share',
-                  child: Text('공유'),
-                ),
-                PopupMenuItem(
-                  value: 'edit',
-                  child: Text('편집'),
-                ),
-                PopupMenuItem(
-                  value: 'duplicate',
-                  child: Text('복사본 만들기'),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Text('삭제'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+              );
+            }
 
-  Widget _buildListCard(DdayItem item) {
-    final dday = getDday(item);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: const Color(0xFFE9EEF6),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: CircularProgressIndicator(
-              value: getProgressValue(item),
-              strokeWidth: 5,
-              backgroundColor: const Color(0xFFE9EEF6),
-              valueColor: AlwaysStoppedAnimation<Color>(item.color),
-              strokeCap: StrokeCap.round,
-            ),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF111827),
+            return SafeArea(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(24, 0, 24, 18),
+                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.14), blurRadius: 32, offset: const Offset(0, 14))],
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.78,
+                    ),
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Expanded(child: Text('알림 설정', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: _ink))),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.close_rounded, color: _softIcon, size: 26),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          _alarmSwitchTile(
+                            onChanged: (v) {
+                              updateAlarmState(() {
+                                _alarmEnabled = v;
+                                if (v && _alarmMinutesBefore == -1) {
+                                  _alarmMinutesBefore = 1440;
+                                }
+                                if (!v) {
+                                  _alarmMinutesBefore = -1;
+                                }
+                              });
+                            },
+                          ),
+                          if (_alarmEnabled) ...[
+                            const Divider(height: 20, color: _line),
+                            alarmOption(-2, '당일 오전 9시', '일정 당일 아침에 미리 알림'),
+                            alarmOption(0, '정각 알림', '일정 시간이 되었을 때'),
+                            alarmOption(60, '1시간 전', '중요한 약속 직전 알림'),
+                            alarmOption(1440, '하루 전', '기념일 전날 미리 알림'),
+                            alarmOption(2880, '2일 전', '준비가 필요한 일정'),
+                            alarmOption(10080, '일주일 전', '여행, 시험, 큰 일정'),
+                          ],
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _saveBlue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 15),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                              ),
+                              child: const Text('완료', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  getRemainTimeText(item),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF6B7280),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            dday == 0
-                ? '오늘'
-                : dday > 0
-                    ? 'D-$dday'
-                    : 'D+${dday.abs()}',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: item.color,
-            ),
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(
-              Icons.more_vert_rounded,
-              color: Color(0xFF9AA4B2),
-            ),
-            onSelected: (value) => handleItemMenu(value, item),
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'share',
-                child: Text('공유'),
               ),
-              PopupMenuItem(
-                value: 'edit',
-                child: Text('편집'),
-              ),
-              PopupMenuItem(
-                value: 'duplicate',
-                child: Text('복사본 만들기'),
-              ),
-              PopupMenuItem(
-                value: 'delete',
-                child: Text('삭제'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 46, 22, 46),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: const Color(0xFFE9EEF6),
-        ),
-      ),
-      child: const Column(
-        children: [
-          Icon(
-            Icons.event_available_rounded,
-            size: 58,
-            color: Color(0xFF3182F6),
-          ),
-          SizedBox(height: 18),
-          Text(
-            '아직 등록된 일정이 없어요',
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF111827),
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            '+ 버튼을 눌러 첫 일정을 추가해보세요.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.4,
-              color: Color(0xFF6B7280),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class AddDdayScreen extends StatefulWidget {
-  final DdayItem? item;
-
-  const AddDdayScreen({
-    super.key,
-    this.item,
-  });
-
-  @override
-  State<AddDdayScreen> createState() => _AddDdayScreenState();
-}
-
-class _AddDdayScreenState extends State<AddDdayScreen> {
-  final TextEditingController titleController = TextEditingController();
-
-  DateTime? selectedDate;
-  int selectedIconCodePoint = Icons.star_rounded.codePoint;
-  int selectedColorValue = const Color(0xFF3182F6).value;
-  String repeatType = 'none';
-
-  bool get isEditMode => widget.item != null;
-
-  final List<IconData> iconOptions = const [
-    Icons.star_rounded,
-    Icons.favorite_rounded,
-    Icons.cake_rounded,
-    Icons.flight_takeoff_rounded,
-    Icons.school_rounded,
-    Icons.work_rounded,
-    Icons.home_rounded,
-    Icons.pets_rounded,
-  ];
-
-  final List<Color> colorOptions = const [
-    Color(0xFF3182F6),
-    Color(0xFFFF6B81),
-    Color(0xFFFFA726),
-    Color(0xFF00B894),
-    Color(0xFF8E44AD),
-    Color(0xFF2D3436),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-
-    final item = widget.item;
-    if (item != null) {
-      titleController.text = item.title;
-      selectedDate = item.targetDate;
-      selectedIconCodePoint = item.iconCodePoint;
-      selectedColorValue = item.colorValue;
-      repeatType = item.repeatType;
-    }
-  }
-
-  @override
-  void dispose() {
-    titleController.dispose();
-    super.dispose();
-  }
-
-  Future<void> pickDate() async {
-    final now = DateTime.now();
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate ?? now,
-      firstDate: DateTime(now.year - 20),
-      lastDate: DateTime(now.year + 50),
-      helpText: '날짜 선택',
-      cancelText: '취소',
-      confirmText: '선택',
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF3182F6),
-              onPrimary: Colors.white,
-              onSurface: Color(0xFF111827),
-            ),
-          ),
-          child: child!,
+            );
+          },
         );
       },
     );
-
-    if (picked == null) return;
-
-    setState(() {
-      selectedDate = picked;
-    });
   }
 
-  void save() {
-    final title = titleController.text.trim();
-
-    if (title.isEmpty) {
-      showSnackBar('제목을 입력해 주세요.');
-      return;
-    }
-
-    if (selectedDate == null) {
-      showSnackBar('날짜를 선택해 주세요.');
-      return;
-    }
-
-    final original = widget.item;
-
-    final item = DdayItem(
-      title: title,
-      targetDate: selectedDate!,
-      iconCodePoint: selectedIconCodePoint,
-      colorValue: selectedColorValue,
-      createdAt: original?.createdAt ?? DateTime.now(),
-      repeatType: repeatType,
-    );
-
-    Navigator.pop(context, item);
-  }
-
-  void showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+  Widget _alarmSwitchTile({required ValueChanged<bool> onChanged}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => onChanged(!_alarmEnabled),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('알림 사용', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink)),
+                  const SizedBox(height: 3),
+                  Text(_alarmEnabled ? _alarmText(_alarmMinutesBefore) : '알림을 보내지 않음', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _muted)),
+                ],
+              ),
+            ),
+            Switch(
+              value: _alarmEnabled,
+              activeColor: _saveBlue,
+              onChanged: onChanged,
+            ),
+          ],
         ),
       ),
     );
   }
 
-  String getDateText() {
-    if (selectedDate == null) return '날짜를 선택하세요';
-
-    final date = selectedDate!;
-    return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
+  Widget _alarmOption(int value, String label, String desc) {
+    final selected = _alarmMinutesBefore == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        setState(() => _alarmMinutesBefore = value);
+        Navigator.pop(context);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: selected ? _saveBlue : _line, width: selected ? 7 : 2),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink)),
+                  const SizedBox(height: 3),
+                  Text(desc, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _muted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  String getRepeatText() {
-    if (repeatType == 'yearly') return '매년 반복';
-    return '반복 없음';
+  void _save() {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('제목을 입력해주세요.')));
+      return;
+    }
+    final old = widget.item;
+    final item = DdayItem(
+      id: old?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      title: title,
+      targetDate: _date,
+      targetTime: _time,
+      repeatType: _repeatType,
+      icon: _icon,
+      colorValue: _color.value,
+      createdAt: old?.createdAt ?? DateTime.now(),
+      memo: _memoController.text.trim(),
+      alarmMinutesBefore: _alarmEnabled ? _alarmMinutesBefore : -1,
+    );
+    Navigator.pop(context, item);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isEdit = widget.item != null;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF5F7FB),
-        foregroundColor: const Color(0xFF111827),
-        elevation: 0,
-        title: Text(
-          isEditMode ? '일정 편집' : '일정 추가',
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
+      backgroundColor: const Color(0xFFF4F6FA),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 120),
+        child: Column(
           children: [
-            Text(
-              isEditMode ? '일정을 수정해보세요' : '어떤 날을 기다리고 있나요?',
-              style: const TextStyle(
-                fontSize: 25,
-                height: 1.18,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF111827),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '제목과 날짜를 입력하면 자동으로 남은 시간이 계산됩니다.',
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF6B7280),
-              ),
-            ),
-            const SizedBox(height: 24),
-            _buildSectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '제목',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
+            _topBar(isEdit),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 34),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _previewCard(),
+                    const SizedBox(height: 16),
+                    _titleBox(),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: _selectCard(Icons.calendar_month, '날짜', _fullDate(_date), _pickDate)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _selectCard(Icons.schedule, '시간', _timeText(_time), _pickTime)),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: titleController,
-                    textInputAction: TextInputAction.done,
-                    decoration: InputDecoration(
-                      hintText: '예: 생일, 여행, 시험',
-                      hintStyle: const TextStyle(
-                        color: Color(0xFF9AA4B2),
-                        fontWeight: FontWeight.w500,
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFFF5F7FB),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(18),
-                        borderSide: BorderSide.none,
+                    const SizedBox(height: 12),
+                    _wideSelectCard(Icons.repeat, '반복', _repeatText(_repeatType), _showRepeatPicker),
+                    const SizedBox(height: 12),
+                    _wideSelectCard(Icons.notifications_none_rounded, '알림', _alarmEnabled ? _alarmText(_alarmMinutesBefore) : '알림 안 함', _showAlarmPicker),
+                    const SizedBox(height: 12),
+                    _memoBox(),
+                    const SizedBox(height: 22),
+                    _sectionLabel('꾸미기'),
+                    const SizedBox(height: 12),
+                    _decorBox(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('아이콘', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _muted)),
+                          const SizedBox(height: 12),
+                          Wrap(spacing: 8, runSpacing: 8, children: _icons.map((e) => _iconChip(e)).toList()),
+                          const SizedBox(height: 18),
+                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                          const SizedBox(height: 18),
+                          const Text('색상', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _muted)),
+                          const SizedBox(height: 12),
+                          Wrap(spacing: 13, runSpacing: 13, children: _colors.map((e) => _colorChip(e)).toList()),
+                        ],
                       ),
                     ),
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildSectionCard(
-              child: InkWell(
-                onTap: pickDate,
-                borderRadius: BorderRadius.circular(18),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 17,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F7FB),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.calendar_month_rounded,
-                        color: Color(selectedColorValue),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          getDateText(),
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            color: selectedDate == null
-                                ? const Color(0xFF9AA4B2)
-                                : const Color(0xFF111827),
-                          ),
-                        ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right_rounded,
-                        color: Color(0xFF9AA4B2),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildSectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '반복',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildRepeatButton(
-                          label: '반복 없음',
-                          value: 'none',
-                          icon: Icons.event_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _buildRepeatButton(
-                          label: '매년 반복',
-                          value: 'yearly',
-                          icon: Icons.repeat_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildSectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '아이콘',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: iconOptions.map((icon) {
-                      final selected = selectedIconCodePoint == icon.codePoint;
-
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedIconCodePoint = icon.codePoint;
-                          });
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? Color(selectedColorValue).withOpacity(0.13)
-                                : const Color(0xFFF5F7FB),
-                            borderRadius: BorderRadius.circular(17),
-                            border: Border.all(
-                              color: selected
-                                  ? Color(selectedColorValue)
-                                  : Colors.transparent,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Icon(
-                            icon,
-                            color: selected
-                                ? Color(selectedColorValue)
-                                : const Color(0xFF6B7280),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildSectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '색상',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: colorOptions.map((color) {
-                      final selected = selectedColorValue == color.value;
-
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedColorValue = color.value;
-                          });
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: selected
-                                  ? const Color(0xFF111827)
-                                  : Colors.transparent,
-                              width: 3,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: color.withOpacity(0.22),
-                                blurRadius: 12,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: selected
-                              ? const Icon(
-                                  Icons.check_rounded,
-                                  color: Colors.white,
-                                  size: 24,
-                                )
-                              : null,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      bottomSheet: Container(
-        color: const Color(0xFFF5F7FB),
-        padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              onPressed: save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3182F6),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              child: Text(
-                isEditMode ? '수정 완료' : '저장하기',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRepeatButton({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
-    final selected = repeatType == value;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          repeatType = value;
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        height: 54,
-        decoration: BoxDecoration(
-          color: selected
-              ? Color(selectedColorValue).withOpacity(0.12)
-              : const Color(0xFFF5F7FB),
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(
-            color: selected ? Color(selectedColorValue) : Colors.transparent,
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 19,
-              color: selected ? Color(selectedColorValue) : const Color(0xFF6B7280),
-            ),
-            const SizedBox(width: 7),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: selected ? const Color(0xFF111827) : const Color(0xFF6B7280),
               ),
             ),
           ],
@@ -1560,22 +2846,224 @@ class _AddDdayScreenState extends State<AddDdayScreen> {
     );
   }
 
-  Widget _buildSectionCard({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.035),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+  Widget _topBar(bool isEdit) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 16, 20, 10),
+      child: Row(
+        children: [
+          IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, size: 29, color: Color(0xFF4B5563))),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              isEdit ? '일정 편집' : '새 일정',
+              style: const TextStyle(fontSize: 29, fontWeight: FontWeight.w700, color: _ink, letterSpacing: -0.8),
+            ),
+          ),
+          FilledButton(
+            onPressed: _save,
+            style: FilledButton.styleFrom(
+              backgroundColor: _saveBlue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 23, vertical: 15),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+            child: const Text('저장', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _previewCard() {
+    final title = _titleController.text.trim().isEmpty ? '일정 제목' : _titleController.text.trim();
+    final days = _daysUntil();
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    return AnimatedBuilder(
+      animation: _titleController,
+      builder: (context, _) {
+        final isTitleEmpty = _titleController.text.trim().isEmpty;
+        final liveTitle = isTitleEmpty ? '일정 제목' : _titleController.text.trim();
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20, offset: const Offset(0, 10))],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(19)),
+                child: Icon(_iconData(_icon), color: const Color(0xFF4B5563), size: 30),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_editDdayText(), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: _color, letterSpacing: -0.5)),
+                    SizedBox(height: isLandscape ? 2 : 4),
+                    Text(liveTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: isTitleEmpty ? const Color(0xFFB7BDC8) : _ink, letterSpacing: -0.5)),
+                    const SizedBox(height: 5),
+                    Text('${_fullDate(_date)} · ${_timeText(_time)} · ${_repeatText(_repeatType)} · ${_alarmEnabled ? _alarmText(_alarmMinutesBefore) : '알림 안 함'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _muted)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _titleBox() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: _line)),
+      child: Row(
+        children: [
+          Icon(_iconData(_icon), color: _softIcon, size: 23),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _titleController,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _ink),
+              decoration: const InputDecoration(hintText: '일정 제목', hintStyle: TextStyle(color: Color(0xFFB7BDC8), fontWeight: FontWeight.w700), border: InputBorder.none, isDense: true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectCard(IconData icon, String label, String value, VoidCallback onTap) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: _line)),
+        child: Row(
+          children: [
+            Icon(icon, color: _softIcon, size: 22),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _muted)),
+                  const SizedBox(height: 4),
+                  Text(value, maxLines: 1, overflow: TextOverflow.visible, softWrap: false, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ink)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _wideSelectCard(IconData icon, String label, String value, VoidCallback onTap) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: _line)),
+        child: Row(
+          children: [
+            Icon(icon, color: _softIcon, size: 23),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _muted)),
+                  const SizedBox(height: 4),
+                  Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _ink)),
+                ],
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded, color: _softIcon),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _memoBox() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: _line)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(padding: EdgeInsets.only(top: 18), child: Icon(Icons.notes, color: _softIcon, size: 23)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _memoController,
+              minLines: 1,
+              maxLines: 3,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink),
+              decoration: const InputDecoration(hintText: '메모', hintStyle: TextStyle(color: Color(0xFFB7BDC8), fontWeight: FontWeight.w700), border: InputBorder.none),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _ink, letterSpacing: -0.3)),
+    );
+  }
+
+  Widget _decorBox({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: _line)),
       child: child,
+    );
+  }
+
+  Widget _iconChip(String key) {
+    final selected = _icon == key;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => setState(() => _icon = key),
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFF3F4F6) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected ? _ink : _line, width: selected ? 1.7 : 1),
+        ),
+        child: Icon(_iconData(key), color: selected ? _ink : const Color(0xFF4B5563), size: 22),
+      ),
+    );
+  }
+
+  Widget _colorChip(Color color) {
+    final selected = _color.value == color.value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => setState(() => _color = color),
+      child: Container(
+        width: 40,
+        height: 40,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: selected ? _ink : Colors.transparent, width: 2)),
+        child: Container(decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      ),
     );
   }
 }
