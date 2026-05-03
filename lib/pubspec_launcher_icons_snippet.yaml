@@ -1,0 +1,11 @@
+# pubspec.yaml에 아래 설정이 없으면 추가하세요.
+# flutter_launcher_icons 패키지가 dev_dependencies에 이미 있으면 중복 추가하지 마세요.
+
+dev_dependencies:
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21

@@ -10,9 +10,44 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:app_settings/app_settings.dart';
+import 'package:home_widget/home_widget.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+
+const String _localePrefsKey = 'tickday_locale';
+const String _splashSeenPrefsKey = 'tickday_splash_seen';
+final ValueNotifier<Locale?> appLocaleNotifier = ValueNotifier<Locale?>(null);
+
+Locale? _localeFromCode(String? code) {
+  switch (code) {
+    case 'ko':
+      return const Locale('ko', 'KR');
+    case 'en':
+      return const Locale('en', 'US');
+    case 'ja':
+      return const Locale('ja', 'JP');
+    case 'vi':
+      return const Locale('vi', 'VN');
+    default:
+      return null;
+  }
+}
+
+String _languageName(String code) {
+  switch (code) {
+    case 'ko':
+      return '한국어';
+    case 'en':
+      return 'English';
+    case 'ja':
+      return '日本語';
+    case 'vi':
+      return 'Tiếng Việt';
+    default:
+      return 'System';
+  }
+}
 
 class L {
   final Locale locale;
@@ -31,7 +66,7 @@ class L {
     return en;
   }
 
-  String get appTitle => pick(ko: '디데이 알림', en: 'TickDay', ja: 'TickDay', vi: 'TickDay');
+  String get appTitle => pick(ko: 'TickDay', en: 'TickDay', ja: 'TickDay', vi: 'TickDay');
   String get subtitle => pick(
         ko: '소중한 날을 놓치지 마세요',
         en: 'Never miss your important days',
@@ -56,17 +91,59 @@ class L {
   String get permissionOk => pick(ko: '핵심 정상', en: 'Ready', ja: '正常', vi: 'Sẵn sàng');
   String get permissionOkSubtitle => pick(ko: '기본 알림과 정확한 알람이 정상입니다.', en: 'Notifications and exact alarms are ready.', ja: '通知と正確なアラームは正常です。', vi: 'Thông báo và báo thức chính xác đã sẵn sàng.');
   String get repeatYearly => pick(ko: '매년', en: 'Yearly', ja: '毎年', vi: 'Hằng năm');
+  String get settingsNeeded => pick(ko: '설정 필요', en: 'Setup needed', ja: '設定が必要', vi: 'Cần cài đặt');
+  String get caution => pick(ko: '주의', en: 'Check', ja: '注意', vi: 'Chú ý');
+  String get normal => pick(ko: '정상', en: 'OK', ja: '正常', vi: 'Ổn');
+  String get later => pick(ko: '나중에', en: 'Later', ja: '後で', vi: 'Để sau');
+  String get confirm => pick(ko: '확인', en: 'OK', ja: '確認', vi: 'OK');
+  String get save => pick(ko: '저장', en: 'Save', ja: '保存', vi: 'Lưu');
+  String get done => pick(ko: '완료', en: 'Done', ja: '完了', vi: 'Xong');
+  String get edit => pick(ko: '편집', en: 'Edit', ja: '編集', vi: 'Sửa');
+  String get delete => pick(ko: '삭제', en: 'Delete', ja: '削除', vi: 'Xóa');
+  String get cancel => pick(ko: '취소', en: 'Cancel', ja: 'キャンセル', vi: 'Hủy');
+  String get share => pick(ko: '공유', en: 'Share', ja: '共有', vi: 'Chia sẻ');
+  String get copy => pick(ko: '복사본 만들기', en: 'Make a copy', ja: 'コピーを作成', vi: 'Tạo bản sao');
+  String get noRepeat => pick(ko: '반복 안 함', en: 'No repeat', ja: '繰り返しなし', vi: 'Không lặp lại');
+  String get yearlyRepeat => pick(ko: '매년 반복', en: 'Repeat yearly', ja: '毎年繰り返し', vi: 'Lặp lại hằng năm');
+  String get titleFallback => pick(ko: '일정 제목', en: 'Event title', ja: '予定タイトル', vi: 'Tiêu đề sự kiện');
+  String get titleNone => pick(ko: '제목 없음', en: 'Untitled', ja: 'タイトルなし', vi: 'Không có tiêu đề');
+  String get memo => pick(ko: '메모', en: 'Memo', ja: 'メモ', vi: 'Ghi chú');
+  String get noMemo => pick(ko: '메모 없음', en: 'No memo', ja: 'メモなし', vi: 'Không có ghi chú');
+  String get date => pick(ko: '날짜', en: 'Date', ja: '日付', vi: 'Ngày');
+  String get time => pick(ko: '시간', en: 'Time', ja: '時間', vi: 'Giờ');
+  String get repeat => pick(ko: '반복', en: 'Repeat', ja: '繰り返し', vi: 'Lặp lại');
+  String get reminder => pick(ko: '알림', en: 'Reminder', ja: '通知', vi: 'Nhắc nhở');
+  String get newEvent => pick(ko: '새 일정', en: 'New event', ja: '新しい予定', vi: 'Sự kiện mới');
+  String get editEvent => pick(ko: '일정 편집', en: 'Edit event', ja: '予定を編集', vi: 'Sửa sự kiện');
+  String get decorate => pick(ko: '꾸미기', en: 'Customize', ja: 'カスタマイズ', vi: 'Tùy chỉnh');
+  String get icon => pick(ko: '아이콘', en: 'Icon', ja: 'アイコン', vi: 'Biểu tượng');
+  String get color => pick(ko: '색상', en: 'Color', ja: '色', vi: 'Màu sắc');
+  String get addHomeWidget => pick(ko: '홈 위젯 추가하기', en: 'Add home widget', ja: 'ホームウィジェットを追加', vi: 'Thêm widget màn hình chính');
+  String get smallWidget => pick(ko: '작은 위젯', en: 'Small widget', ja: '小さいウィジェット', vi: 'Widget nhỏ');
+  String get wideWidget => pick(ko: '넓은 위젯', en: 'Wide widget', ja: '横長ウィジェット', vi: 'Widget rộng');
+  String get todayIsTheDay => pick(ko: '오늘이 바로 그날이에요', en: 'Today is the day', ja: '今日はその日です', vi: 'Hôm nay là ngày đó');
+  String get slowlyPrepare => pick(ko: '천천히 준비해요 🌿', en: 'Take your time preparing 🌿', ja: 'ゆっくり準備しましょう 🌿', vi: 'Cứ từ từ chuẩn bị 🌿');
+  String get almostThere => pick(ko: '곧 만날 순간이에요 💜', en: 'The moment is almost here 💜', ja: 'もうすぐその瞬間です 💜', vi: 'Khoảnh khắc ấy sắp đến rồi 💜');
 }
+
 
 class NotificationService {
   NotificationService._();
 
   static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  static void Function(String payload)? onNotificationClick;
+  static String? _launchPayload;
+
+  static String? takeLaunchPayload() {
+    final payload = _launchPayload;
+    _launchPayload = null;
+    return payload;
+  }
 
   static const AndroidNotificationDetails _androidDetails = AndroidNotificationDetails(
     'dday_alarm_channel',
-    'D-day 알림',
-    channelDescription: '등록한 D-day 일정 알림입니다.',
+    'D-day Reminder',
+    channelDescription: 'TickDay event reminder notifications.',
     importance: Importance.max,
     priority: Priority.high,
     playSound: true,
@@ -86,7 +163,24 @@ class NotificationService {
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: android);
-    await _plugin.initialize(settings);
+    await _plugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        final payload = response.payload;
+        if (payload == null || payload.isEmpty || payload == '__test__') return;
+        onNotificationClick?.call(payload);
+      },
+    );
+
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    final launchPayload = launchDetails?.notificationResponse?.payload;
+    if (launchDetails?.didNotificationLaunchApp == true &&
+        launchPayload != null &&
+        launchPayload.isNotEmpty &&
+        launchPayload != '__test__') {
+      _launchPayload = launchPayload;
+    }
+
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.requestNotificationsPermission();
     await androidPlugin?.requestExactAlarmsPermission();
@@ -128,10 +222,11 @@ class NotificationService {
 
   static Future<void> showNow({
     int id = 999001,
-    String title = '테스트 알림',
-    String body = '이 알림이 보이면 기본 알림은 성공입니다.',
+    String title = 'Test notification',
+    String body = 'If you see this, notifications are working.',
+    String? payload,
   }) async {
-    await _plugin.show(id, title, body, _details);
+    await _plugin.show(id, title, body, _details, payload: payload);
   }
 
   static Future<bool> schedule({
@@ -139,6 +234,7 @@ class NotificationService {
     required String title,
     required String body,
     required DateTime scheduledAt,
+    String? payload,
   }) async {
     if (!scheduledAt.isAfter(DateTime.now())) return false;
 
@@ -155,6 +251,7 @@ class NotificationService {
         body,
         scheduled,
         _details,
+        payload: payload,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
@@ -169,6 +266,7 @@ class NotificationService {
           body,
           scheduled,
           _details,
+          payload: payload,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         );
@@ -184,37 +282,606 @@ class NotificationService {
   static Future<void> cancel(int id) async => _plugin.cancel(id);
 }
 
+
+class WidgetDeepLinkService {
+  WidgetDeepLinkService._();
+
+  static const MethodChannel _channel = MethodChannel('tickday/widget_deeplink');
+  static void Function(String itemId)? _onItemId;
+
+  static void init(void Function(String itemId) onItemId) {
+    _onItemId = onItemId;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method != 'openWidgetItem') return;
+      final itemId = call.arguments?.toString() ?? '';
+      if (itemId.isEmpty) return;
+      _onItemId?.call(itemId);
+    });
+  }
+
+  static Future<String?> takeInitialItemId() async {
+    try {
+      final itemId = await _channel.invokeMethod<String>('takeInitialWidgetItemId');
+      if (itemId == null || itemId.isEmpty) return null;
+      return itemId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void dispose() {
+    _onItemId = null;
+    _channel.setMethodCallHandler(null);
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
   runApp(const DdayApp());
 }
 
-class DdayApp extends StatelessWidget {
+class DdayApp extends StatefulWidget {
   const DdayApp({super.key});
 
   @override
+  State<DdayApp> createState() => _DdayAppState();
+}
+
+class _DdayAppState extends State<DdayApp> {
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedLocale();
+  }
+
+  Future<void> _loadSavedLocale() async {
+    final prefs = await SharedPreferences.getInstance();
+    appLocaleNotifier.value = _localeFromCode(prefs.getString(_localePrefsKey));
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'TickDay',
-      supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US'), Locale('ja', 'JP'), Locale('vi', 'VN')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      theme: ThemeData(
-        useMaterial3: true,
-        fontFamily: 'Roboto',
-        scaffoldBackgroundColor: const Color(0xFFF4F6FA),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7A3E91)),
-        textTheme: ThemeData.light().textTheme.apply(
-              bodyColor: const Color(0xFF111827),
-              displayColor: const Color(0xFF111827),
-            ),
+    return ValueListenableBuilder<Locale?>(
+      valueListenable: appLocaleNotifier,
+      builder: (context, locale, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'TickDay',
+          locale: locale,
+          supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US'), Locale('ja', 'JP'), Locale('vi', 'VN')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          theme: ThemeData(
+            useMaterial3: true,
+            fontFamily: 'Roboto',
+            scaffoldBackgroundColor: const Color(0xFFF4F6FA),
+            colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7A3E91)),
+            textTheme: ThemeData.light().textTheme.apply(
+                  bodyColor: const Color(0xFF111827),
+                  displayColor: const Color(0xFF111827),
+                ),
+          ),
+          home: const SplashGate(),
+        );
+      },
+    );
+  }
+}
+
+class SplashGate extends StatefulWidget {
+  const SplashGate({super.key});
+
+  @override
+  State<SplashGate> createState() => _SplashGateState();
+}
+
+class _SplashGateState extends State<SplashGate> {
+  bool? _showSplash;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSplash();
+  }
+
+  Future<void> _checkSplash() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool(_splashSeenPrefsKey) ?? false;
+    if (!mounted) return;
+    setState(() => _showSplash = !seen);
+  }
+
+  Future<void> _finishSplash() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_splashSeenPrefsKey, true);
+    if (!mounted) return;
+    setState(() => _showSplash = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showSplash == null) {
+      return const Scaffold(backgroundColor: Color(0xFFF4F6FA));
+    }
+    if (_showSplash == true) {
+      return TickDaySplashScreen(onDone: _finishSplash);
+    }
+    return const HomePage();
+  }
+}
+
+class TickDaySplashScreen extends StatefulWidget {
+  final Future<void> Function() onDone;
+  const TickDaySplashScreen({super.key, required this.onDone});
+
+  @override
+  State<TickDaySplashScreen> createState() => _TickDaySplashScreenState();
+}
+
+class _TickDaySplashScreenState extends State<TickDaySplashScreen> {
+  int _index = 0;
+  Timer? _timer;
+
+  List<String> _messages(BuildContext context) {
+    final l = L.of(context);
+    return [
+      l.pick(
+        ko: '멋진 기기를 사용 중이시네요 😊',
+        en: 'Nice device you’ve got 😊',
+        ja: '素敵な端末をお使いですね 😊',
+        vi: 'Bạn đang dùng một thiết bị thật đẹp 😊',
       ),
-      home: const HomePage(),
+      l.pick(
+        ko: 'TickDay 환경을 준비하고 있어요',
+        en: 'Setting up your TickDay experience',
+        ja: 'TickDay の環境を準備しています',
+        vi: 'Đang chuẩn bị trải nghiệm TickDay',
+      ),
+      l.pick(
+        ko: '위젯과 알림을 설정 중이에요',
+        en: 'Preparing widgets and reminders',
+        ja: 'ウィジェットと通知を設定しています',
+        vi: 'Đang chuẩn bị widget và lời nhắc',
+      ),
+      l.pick(
+        ko: '거의 다 되었어요 ✨',
+        en: 'Almost ready ✨',
+        ja: 'もうすぐ完了です ✨',
+        vi: 'Sắp xong rồi ✨',
+      ),
+    ];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 650), (timer) {
+      if (!mounted) return;
+      final count = _messages(context).length;
+      if (_index < count - 1) {
+        setState(() => _index++);
+      } else {
+        timer.cancel();
+        Future<void>.delayed(const Duration(milliseconds: 450), widget.onDone);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = _messages(context);
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF6E9FF), Color(0xFFF4F6FA), Color(0xFFFFEEF6)],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 118,
+                    height: 118,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(34),
+                      boxShadow: [BoxShadow(color: const Color(0xFF7A3E91).withOpacity(0.18), blurRadius: 30, offset: const Offset(0, 14))],
+                    ),
+                    child: const Icon(Icons.event_available_rounded, size: 58, color: Color(0xFF7A3E91)),
+                  ),
+                  const SizedBox(height: 26),
+                  const Text('TickDay', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: Color(0xFF111827), letterSpacing: -0.8)),
+                  const SizedBox(height: 24),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.14), end: Offset.zero).animate(animation), child: child),
+                    ),
+                    child: Text(
+                      messages[_index],
+                      key: ValueKey<int>(_index),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w800, color: Color(0xFF374151)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFF7A3E91))),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class WidgetPreviewData {
+  final String dday;
+  final String title;
+  final String remain;
+  final String emotion;
+  final double progress;
+  final int colorValue;
+
+  const WidgetPreviewData({
+    required this.dday,
+    required this.title,
+    required this.remain,
+    required this.emotion,
+    required this.progress,
+    required this.colorValue,
+  });
+}
+
+class WidgetPreviewPage extends StatefulWidget {
+  final List<WidgetPreviewData> items;
+  final VoidCallback onAddSmall;
+  final VoidCallback onAddWide;
+
+  const WidgetPreviewPage({
+    super.key,
+    required this.items,
+    required this.onAddSmall,
+    required this.onAddWide,
+  });
+
+  @override
+  State<WidgetPreviewPage> createState() => _WidgetPreviewPageState();
+}
+
+class _WidgetPreviewPageState extends State<WidgetPreviewPage> {
+  final PageController _controller = PageController();
+  int _page = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || !_controller.hasClients) return;
+      final next = _page == 0 ? 1 : 0;
+      _controller.animateToPage(next, duration: const Duration(milliseconds: 360), curve: Curves.easeOutCubic);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _pageDot(int index) {
+    final selected = _page == index;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      width: selected ? 18 : 7,
+      height: 7,
+      margin: const EdgeInsets.symmetric(horizontal: 3),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFF111827) : const Color(0xFFD1D5DB),
+        borderRadius: BorderRadius.circular(99),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+    final items = widget.items.isEmpty
+        ? [
+            WidgetPreviewData(
+              dday: 'D-7',
+              title: l.pick(ko: '소중한 일정', en: 'Important day', ja: '大切な予定', vi: 'Ngày quan trọng'),
+              remain: l.pick(ko: '7일 남음', en: '7 days left', ja: 'あと7日', vi: 'Còn 7 ngày'),
+              emotion: l.pick(ko: '조금씩 가까워지고 있어요 🙂', en: 'Getting closer every day 🙂', ja: '少しずつ近づいています 🙂', vi: 'Mỗi ngày lại gần hơn 🙂'),
+              progress: 0.62,
+              colorValue: const Color(0xFF7A3E91).value,
+            ),
+            WidgetPreviewData(
+              dday: 'D-28',
+              title: l.pick(ko: '여행 준비', en: 'Trip plan', ja: '旅行の準備', vi: 'Kế hoạch du lịch'),
+              remain: l.pick(ko: '28일 남음', en: '28 days left', ja: 'あと28日', vi: 'Còn 28 ngày'),
+              emotion: l.pick(ko: '천천히 준비해요 🌿', en: 'Prepare at your own pace 🌿', ja: 'ゆっくり準備しましょう 🌿', vi: 'Cứ từ từ chuẩn bị 🌿'),
+              progress: 0.35,
+              colorValue: const Color(0xFF2F80ED).value,
+            ),
+          ]
+        : widget.items;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6FA),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                    style: IconButton.styleFrom(backgroundColor: Colors.white),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l.pick(ko: '홈 화면에서 바로 확인하세요', en: 'Check it from your home screen', ja: 'ホーム画面ですぐ確認', vi: 'Xem ngay trên màn hình chính'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Color(0xFF111827), letterSpacing: -0.4),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          l.pick(ko: '가장 가까운 D-day를 위젯으로 보여드려요', en: 'Your nearest D-day appears as a widget', ja: '一番近いD-dayをウィジェットで表示', vi: 'D-day gần nhất sẽ hiển thị bằng widget'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF6B7280)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: _controller,
+                onPageChanged: (value) => setState(() => _page = value),
+                children: [
+                  _PreviewStage(
+                    title: l.smallWidget,
+                    subtitle: l.pick(ko: '가장 가까운 일정 1개를 크게 표시', en: 'Shows one nearest event clearly', ja: '一番近い予定を大きく表示', vi: 'Hiển thị rõ 1 sự kiện gần nhất'),
+                    child: _SmallWidgetPreview(item: items.first),
+                  ),
+                  _PreviewStage(
+                    title: l.wideWidget,
+                    subtitle: l.pick(ko: '가까운 일정 2개를 한 번에 표시', en: 'Shows two upcoming events at once', ja: '近い予定を2件まとめて表示', vi: 'Hiển thị 2 sự kiện sắp tới'),
+                    child: _WideWidgetPreview(items: items.length >= 2 ? items.take(2).toList() : [items.first, items.first]),
+                  ),
+                ],
+              ),
+            ),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [_pageDot(0), _pageDot(1)]),
+            const SizedBox(height: 14),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 18),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE5E7EB))),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(color: const Color(0xFFF5EEFF), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.info_outline_rounded, color: Color(0xFF7A3E91), size: 19),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      l.pick(
+                        ko: '추가 버튼을 누르면 Android 시스템 위젯 추가 화면이 열립니다. 이 화면의 언어는 휴대폰 시스템 언어를 따를 수 있어요.',
+                        en: 'Tapping Add opens the Android system widget screen. That screen may follow your phone language.',
+                        ja: '追加を押すとAndroidのウィジェット追加画面が開きます。この画面は端末の言語に従う場合があります。',
+                        vi: 'Nhấn Thêm sẽ mở màn hình thêm widget của Android. Màn hình đó có thể dùng ngôn ngữ hệ thống của điện thoại.',
+                      ),
+                      style: const TextStyle(fontSize: 12.5, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.onAddSmall();
+                      },
+                      icon: const Icon(Icons.crop_square_rounded),
+                      label: Text(l.pick(ko: '작은 위젯 추가', en: 'Add small widget', ja: '小さいウィジェットを追加', vi: 'Thêm widget nhỏ'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2F80ED),
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.onAddWide();
+                      },
+                      icon: const Icon(Icons.view_agenda_outlined),
+                      label: Text(l.pick(ko: '넓은 위젯 추가', en: 'Add wide widget', ja: '横長ウィジェットを追加', vi: 'Thêm widget rộng'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        side: const BorderSide(color: Color(0xFFD1D5DB)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewStage extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  const _PreviewStage({required this.title, required this.subtitle, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Color(0xFF111827), letterSpacing: -0.6)),
+          const SizedBox(height: 6),
+          Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, height: 1.35, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
+          const SizedBox(height: 26),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE9EDF5),
+              borderRadius: BorderRadius.circular(34),
+            ),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallWidgetPreview extends StatelessWidget {
+  final WidgetPreviewData item;
+  const _SmallWidgetPreview({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Color(item.colorValue);
+    return Container(
+      width: 210,
+      height: 210,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 26, offset: const Offset(0, 14))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(item.dday, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: color, letterSpacing: -1.0)),
+          const Spacer(),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(value: item.progress, minHeight: 5, backgroundColor: const Color(0xFFE5E7EB), color: color),
+          ),
+          const SizedBox(height: 12),
+          Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF111827))),
+          const SizedBox(height: 4),
+          Text(item.remain, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF6B7280))),
+          const SizedBox(height: 5),
+          Text(item.emotion, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF374151))),
+        ],
+      ),
+    );
+  }
+}
+
+class _WideWidgetPreview extends StatelessWidget {
+  final List<WidgetPreviewData> items;
+  const _WideWidgetPreview({required this.items});
+
+  Widget _row(WidgetPreviewData item) {
+    final color = Color(item.colorValue);
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            children: [
+              Text(item.dday, style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: color, letterSpacing: -0.6)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF111827)))),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(value: item.progress, minHeight: 4, backgroundColor: const Color(0xFFE5E7EB), color: color),
+          ),
+          const SizedBox(height: 5),
+          Text(item.remain, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF6B7280))),
+          const SizedBox(height: 3),
+          Text(item.emotion, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF374151))),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 320,
+      height: 224,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 26, offset: const Offset(0, 14))],
+      ),
+      child: Column(
+        children: [
+          _row(items[0]),
+          Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 7), color: const Color(0xFFE5E7EB)),
+          _row(items[1]),
+        ],
+      ),
     );
   }
 }
@@ -295,7 +962,7 @@ class DdayItem {
   factory DdayItem.fromJson(Map<String, dynamic> json) {
     return DdayItem(
       id: json['id'] as String? ?? DateTime.now().microsecondsSinceEpoch.toString(),
-      title: json['title'] as String? ?? '제목 없음',
+      title: json['title'] as String? ?? 'Untitled',
       targetDate: DateTime.tryParse(json['targetDate'] as String? ?? '') ?? DateTime.now(),
       targetTime: TimeOfDay(
         hour: json['targetHour'] as int? ?? 0,
@@ -344,12 +1011,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _exactAlarmPermissionOk = false;
   bool _permissionCardExpanded = false;
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Timer? _clockTimer;
+  String? _pendingNotificationItemId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    NotificationService.onNotificationClick = _handleNotificationPayload;
+    WidgetDeepLinkService.init(_handleWidgetItemId);
+    _pendingNotificationItemId = NotificationService.takeLaunchPayload();
+    unawaited(_loadInitialWidgetItemId());
     _loadAll(rescheduleNotifications: true);
     _refreshPermissionStatus();
     _startClockTimer();
@@ -358,6 +1031,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _clockTimer?.cancel();
+    if (NotificationService.onNotificationClick == _handleNotificationPayload) {
+      NotificationService.onNotificationClick = null;
+    }
+    WidgetDeepLinkService.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
@@ -390,6 +1067,46 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (_sortType == 'timeLeft') {
         _sortItems();
       }
+    });
+    unawaited(_updateHomeWidget());
+  }
+
+  void _handleNotificationPayload(String payload) {
+    if (payload.isEmpty || payload == '__test__') return;
+    _pendingNotificationItemId = payload;
+    _openPendingNotificationItem();
+  }
+
+  Future<void> _loadInitialWidgetItemId() async {
+    final itemId = await WidgetDeepLinkService.takeInitialItemId();
+    if (itemId == null || itemId.isEmpty) return;
+    _handleWidgetItemId(itemId);
+  }
+
+  void _handleWidgetItemId(String itemId) {
+    if (itemId.isEmpty) return;
+    _pendingNotificationItemId = itemId;
+    _openPendingNotificationItem();
+  }
+
+  void _openPendingNotificationItem() {
+    final id = _pendingNotificationItemId;
+    if (id == null || id.isEmpty || !mounted) return;
+
+    DdayItem? targetItem;
+    for (final item in _items) {
+      if (item.id == id) {
+        targetItem = item;
+        break;
+      }
+    }
+
+    if (targetItem == null) return;
+    _pendingNotificationItemId = null;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showDetail(targetItem!);
     });
   }
 
@@ -519,6 +1236,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _hideWidgetNotice = prefs.getBool(_hideWidgetKey) ?? false;
     });
 
+    _openPendingNotificationItem();
+    await _updateHomeWidget();
+
     if (rescheduleNotifications) {
       await _rescheduleAllNotifications();
     }
@@ -527,6 +1247,107 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _saveItems() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_itemsKey, _items.map((e) => jsonEncode(e.toJson())).toList());
+  }
+
+
+  DdayItem? _nearestWidgetItem() {
+    final items = _nearestWidgetItems(1);
+    return items.isEmpty ? null : items.first;
+  }
+
+  List<DdayItem> _nearestWidgetItems(int count) {
+    if (_items.isEmpty) return <DdayItem>[];
+    final upcoming = List<DdayItem>.from(_items)
+      ..sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
+    return upcoming.take(count).toList();
+  }
+
+  String _widgetRemainText(DdayItem item) {
+    final l = L.of(context);
+    final d = _timeLeft(item);
+    if (d.isNegative) return l.pick(ko: '오늘입니다', en: 'Today', ja: '今日です', vi: 'Hôm nay');
+    final days = d.inDays;
+    final hours = d.inHours % 24;
+    if (days <= 0) return l.pick(ko: '오늘 · ${hours}시간 남음', en: 'Today · ${hours}h left', ja: '今日 · あと${hours}時間', vi: 'Hôm nay · còn ${hours} giờ');
+    if (days == 1) return l.pick(ko: '내일 · ${hours}시간 남음', en: 'Tomorrow · ${hours}h left', ja: '明日 · あと${hours}時間', vi: 'Ngày mai · còn ${hours} giờ');
+    return l.pick(ko: '${days}일 남음', en: '${days}d left', ja: 'あと${days}日', vi: 'Còn ${days} ngày');
+  }
+
+  Future<void> _updateHomeWidget() async {
+    try {
+      final widgetItems = _nearestWidgetItems(2);
+      final item = widgetItems.isEmpty ? null : widgetItems.first;
+
+      if (item == null) {
+        await HomeWidget.saveWidgetData<String>('widget_item_id', '');
+        await HomeWidget.saveWidgetData<String>('widget_dday', 'D-Day');
+        await HomeWidget.saveWidgetData<String>('widget_title', L.of(context).pick(ko: '일정을 등록하세요', en: 'Add an event', ja: '予定を追加してください', vi: 'Thêm sự kiện')); 
+        await HomeWidget.saveWidgetData<String>('widget_remain', 'TickDay');
+        await HomeWidget.saveWidgetData<int>('widget_target_millis', 0);
+        await HomeWidget.saveWidgetData<String>('widget_repeat_type', 'none');
+        await HomeWidget.saveWidgetData<int>('widget_month', 0);
+        await HomeWidget.saveWidgetData<int>('widget_day', 0);
+        await HomeWidget.saveWidgetData<int>('widget_hour', 0);
+        await HomeWidget.saveWidgetData<int>('widget_minute', 0);
+        await HomeWidget.saveWidgetData<int>('widget_created_millis', 0);
+        await HomeWidget.saveWidgetData<String>('widget_lang', Localizations.localeOf(context).languageCode);
+      } else {
+        final target = _effectiveTarget(item);
+        await HomeWidget.saveWidgetData<String>('widget_item_id', item.id);
+        await HomeWidget.saveWidgetData<String>('widget_dday', _dDayText(item));
+        await HomeWidget.saveWidgetData<String>('widget_title', item.title);
+        await HomeWidget.saveWidgetData<String>('widget_remain', _widgetRemainText(item));
+        await HomeWidget.saveWidgetData<int>('widget_target_millis', target.millisecondsSinceEpoch);
+        await HomeWidget.saveWidgetData<String>('widget_repeat_type', item.repeatType);
+        await HomeWidget.saveWidgetData<int>('widget_month', item.targetDate.month);
+        await HomeWidget.saveWidgetData<int>('widget_day', item.targetDate.day);
+        await HomeWidget.saveWidgetData<int>('widget_hour', item.targetTime.hour);
+        await HomeWidget.saveWidgetData<int>('widget_minute', item.targetTime.minute);
+        await HomeWidget.saveWidgetData<int>('widget_created_millis', item.createdAt.millisecondsSinceEpoch);
+        await HomeWidget.saveWidgetData<String>('widget_lang', Localizations.localeOf(context).languageCode);
+      }
+
+      await _saveWideWidgetItem(1, widgetItems.isNotEmpty ? widgetItems[0] : null);
+      await _saveWideWidgetItem(2, widgetItems.length > 1 ? widgetItems[1] : null);
+
+      await HomeWidget.updateWidget(androidName: 'DdayWidgetProvider');
+      await HomeWidget.updateWidget(androidName: 'DdayWidgetProviderWide');
+    } catch (_) {
+      // 홈 위젯이 아직 추가되지 않았거나 네이티브 위젯 초기화 전이어도 앱 기능은 그대로 유지합니다.
+    }
+  }
+
+  Future<void> _saveWideWidgetItem(int index, DdayItem? item) async {
+    final prefix = 'widget_wide_${index}_';
+    if (item == null) {
+      await HomeWidget.saveWidgetData<String>('${prefix}item_id', '');
+      await HomeWidget.saveWidgetData<String>('${prefix}dday', '');
+      await HomeWidget.saveWidgetData<String>('${prefix}title', index == 1 ? L.of(context).pick(ko: '일정을 등록하세요', en: 'Add an event', ja: '予定を追加してください', vi: 'Thêm sự kiện') : '');
+      await HomeWidget.saveWidgetData<String>('${prefix}remain', index == 1 ? 'TickDay' : '');
+      await HomeWidget.saveWidgetData<int>('${prefix}target_millis', 0);
+      await HomeWidget.saveWidgetData<String>('${prefix}repeat_type', 'none');
+      await HomeWidget.saveWidgetData<int>('${prefix}month', 0);
+      await HomeWidget.saveWidgetData<int>('${prefix}day', 0);
+      await HomeWidget.saveWidgetData<int>('${prefix}hour', 0);
+      await HomeWidget.saveWidgetData<int>('${prefix}minute', 0);
+      await HomeWidget.saveWidgetData<int>('${prefix}created_millis', 0);
+      await HomeWidget.saveWidgetData<String>('${prefix}lang', Localizations.localeOf(context).languageCode);
+      return;
+    }
+
+    final target = _effectiveTarget(item);
+    await HomeWidget.saveWidgetData<String>('${prefix}item_id', item.id);
+    await HomeWidget.saveWidgetData<String>('${prefix}dday', _dDayText(item));
+    await HomeWidget.saveWidgetData<String>('${prefix}title', item.title);
+    await HomeWidget.saveWidgetData<String>('${prefix}remain', _widgetRemainText(item));
+    await HomeWidget.saveWidgetData<int>('${prefix}target_millis', target.millisecondsSinceEpoch);
+    await HomeWidget.saveWidgetData<String>('${prefix}repeat_type', item.repeatType);
+    await HomeWidget.saveWidgetData<int>('${prefix}month', item.targetDate.month);
+    await HomeWidget.saveWidgetData<int>('${prefix}day', item.targetDate.day);
+    await HomeWidget.saveWidgetData<int>('${prefix}hour', item.targetTime.hour);
+    await HomeWidget.saveWidgetData<int>('${prefix}minute', item.targetTime.minute);
+    await HomeWidget.saveWidgetData<int>('${prefix}created_millis', item.createdAt.millisecondsSinceEpoch);
+    await HomeWidget.saveWidgetData<String>('${prefix}lang', Localizations.localeOf(context).languageCode);
   }
 
   Future<void> _setNoticeHidden(String key, bool value) async {
@@ -549,6 +1370,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _sortItems();
     });
     await _saveItems();
+    await _updateHomeWidget();
     await _scheduleNotifications(item);
   }
 
@@ -635,13 +1457,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final plan = _nextNotificationPlan(item);
     if (plan == null) return;
 
-    final bodyPrefix = plan.fallbackToTargetTime ? '알림 시간이 지나 D-day 정각으로 보정됨' : _alarmText(item.alarmMinutesBefore);
+    final bodyPrefix = plan.fallbackToTargetTime ? L.of(context).pick(ko: '알림 시간이 지나 D-day 정각으로 보정됨', en: 'Reminder time passed, adjusted to event time', ja: '通知時刻が過ぎたため予定時刻に調整しました', vi: 'Giờ nhắc đã qua, chuyển sang giờ sự kiện') : _alarmText(item.alarmMinutesBefore);
 
     await NotificationService.schedule(
       id: notificationId,
-      title: 'D-day 알림: ${item.title}',
+      title: L.of(context).pick(ko: 'D-day 알림: ${item.title}', en: 'D-day reminder: ${item.title}', ja: 'D-day通知: ${item.title}', vi: 'Nhắc D-day: ${item.title}'),
       body: '$bodyPrefix · ${_fullDate(plan.target)} ${_timeText(TimeOfDay.fromDateTime(plan.target))}',
       scheduledAt: plan.alarmAt,
+      payload: item.id,
     );
   }
 
@@ -649,6 +1472,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await NotificationService.cancel(NotificationService.idFromString(item.id));
     setState(() => _items.removeWhere((e) => e.id == item.id));
     await _saveItems();
+    await _updateHomeWidget();
   }
 
   DateTime _effectiveTarget(DdayItem item) {
@@ -686,6 +1510,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return (elapsed / total).clamp(0.0, 1.0);
   }
 
+
+  Color _urgencyColor(DdayItem item) {
+    final days = _daysLeft(item);
+    if (days <= 0) return const Color(0xFF7A3E91);
+    if (days <= 3) return const Color(0xFFEF4444);
+    if (days <= 7) return const Color(0xFFF97316);
+    return Color(item.colorValue);
+  }
+
   String _shortDate(DateTime date) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(date.month)}.${two(date.day)}';
@@ -702,12 +1535,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   String _remainText(DdayItem item) {
+    final l = L.of(context);
     final d = _timeLeft(item);
-    if (d.isNegative) return '오늘입니다';
+    if (d.isNegative) return l.pick(ko: '오늘입니다', en: 'Today', ja: '今日です', vi: 'Hôm nay');
     final days = d.inDays;
     final hours = d.inHours % 24;
     final minutes = d.inMinutes % 60;
-    return '${days}일 ${hours}시간 ${minutes}분 남음';
+    return l.pick(ko: '${days}일 ${hours}시간 ${minutes}분 남음', en: '${days}d ${hours}h ${minutes}m left', ja: 'あと${days}日${hours}時間${minutes}分', vi: 'Còn ${days} ngày ${hours} giờ ${minutes} phút');
   }
 
   String _eventMoodLabel(DdayItem item) {
@@ -746,27 +1580,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   String _cardEmotionLine(DdayItem item) {
+    final l = L.of(context);
     final d = _timeLeft(item);
-    if (d.isNegative) {
-      return L.of(context).pick(ko: '오늘이 바로 그날이에요', en: 'Today is the day', ja: '今日はその日です', vi: 'Hôm nay là ngày đó');
-    }
-    final hours = d.inHours % 24;
-    final minutes = d.inMinutes % 60;
     final days = d.inDays;
-    if (days <= 0) {
-      return L.of(context).pick(
-        ko: '${hours}시간 ${minutes}분 남음',
-        en: '${hours}h ${minutes}m left',
-        ja: 'あと${hours}時間${minutes}分',
-        vi: 'Còn ${hours} giờ ${minutes} phút',
-      );
+    final title = item.title.toLowerCase();
+
+    if (d.isNegative || days == 0) {
+      return l.pick(ko: '오늘이 바로 그날이에요 💜', en: 'Today is the day 💜', ja: '今日はその日です 💜', vi: 'Hôm nay là ngày đó 💜');
     }
-    return L.of(context).pick(
-      ko: '${days}일 ${hours}시간 남음',
-      en: '${days}d ${hours}h left',
-      ja: 'あと${days}日${hours}時間',
-      vi: 'Còn ${days} ngày ${hours} giờ',
-    );
+    if (days <= 2) {
+      return l.pick(ko: '곧 만날 순간이에요 💜', en: 'The moment is almost here 💜', ja: 'もうすぐその瞬間です 💜', vi: 'Khoảnh khắc ấy sắp đến rồi 💜');
+    }
+    if (days <= 7) {
+      return l.pick(ko: '조금씩 가까워지고 있어요 🙂', en: 'It is getting closer 🙂', ja: '少しずつ近づいています 🙂', vi: 'Đang đến gần hơn rồi 🙂');
+    }
+    if (item.icon == 'cake' || title.contains('생일') || title.contains('birthday')) {
+      return l.pick(ko: '축하할 날을 기다리고 있어요 🎂', en: 'A celebration is on the way 🎂', ja: 'お祝いの日を待っています 🎂', vi: 'Ngày chúc mừng đang đến 🎂');
+    }
+    if (item.icon == 'flight' || title.contains('여행') || title.contains('trip') || title.contains('travel')) {
+      return l.pick(ko: '떠날 날이 천천히 다가와요 ✈️', en: 'Your trip is getting closer ✈️', ja: '旅の日が近づいています ✈️', vi: 'Chuyến đi đang đến gần ✈️');
+    }
+    if (item.icon == 'heart' || title.contains('기념') || title.contains('anniversary')) {
+      return l.pick(ko: '소중한 날을 기억하고 있어요 💕', en: 'Remembering a precious day 💕', ja: '大切な日を覚えています 💕', vi: 'Đang ghi nhớ ngày quý giá 💕');
+    }
+    return l.pick(ko: '천천히 준비해요 🌿', en: 'Take your time preparing 🌿', ja: 'ゆっくり準備しましょう 🌿', vi: 'Cứ từ từ chuẩn bị 🌿');
   }
 
   IconData _iconData(String key) {
@@ -804,34 +1641,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  String _repeatText(String type) => type == 'yearly' ? '매년 반복' : '반복 안 함';
+  String _repeatText(String type) => type == 'yearly' ? L.of(context).yearlyRepeat : L.of(context).noRepeat;
 
   String _alarmText(int minutes) {
+    final l = L.of(context);
     switch (minutes) {
       case -1:
-        return '알림 안 함';
+        return l.pick(ko: '알림 안 함', en: 'No reminder', ja: '通知なし', vi: 'Không nhắc');
       case -2:
-        return '당일 오전 9시';
+        return l.pick(ko: '당일 오전 9시', en: 'Same day 9 AM', ja: '当日午前9時', vi: '9 giờ sáng cùng ngày');
       case 0:
-        return '정각 알림';
+        return l.pick(ko: '정각 알림', en: 'At event time', ja: '予定時刻', vi: 'Đúng giờ sự kiện');
       case 60:
-        return '1시간 전';
+        return l.pick(ko: '1시간 전', en: '1 hour before', ja: '1時間前', vi: 'Trước 1 giờ');
       case 180:
-        return '3시간 전';
+        return l.pick(ko: '3시간 전', en: '3 hours before', ja: '3時間前', vi: 'Trước 3 giờ');
       case 360:
-        return '6시간 전';
+        return l.pick(ko: '6시간 전', en: '6 hours before', ja: '6時間前', vi: 'Trước 6 giờ');
       case 720:
-        return '12시간 전';
+        return l.pick(ko: '12시간 전', en: '12 hours before', ja: '12時間前', vi: 'Trước 12 giờ');
       case 1440:
-        return '하루 전';
+        return l.pick(ko: '하루 전', en: '1 day before', ja: '1日前', vi: 'Trước 1 ngày');
       case 2880:
-        return '2일 전';
+        return l.pick(ko: '2일 전', en: '2 days before', ja: '2日前', vi: 'Trước 2 ngày');
       case 10080:
-        return '일주일 전';
+        return l.pick(ko: '일주일 전', en: '1 week before', ja: '1週間前', vi: 'Trước 1 tuần');
       default:
-        if (minutes > 0 && minutes % 1440 == 0) return '${minutes ~/ 1440}일 전';
-        if (minutes > 0 && minutes % 60 == 0) return '${minutes ~/ 60}시간 전';
-        return '알림 설정';
+        if (minutes > 0 && minutes % 1440 == 0) return l.pick(ko: '${minutes ~/ 1440}일 전', en: '${minutes ~/ 1440} days before', ja: '${minutes ~/ 1440}日前', vi: 'Trước ${minutes ~/ 1440} ngày');
+        if (minutes > 0 && minutes % 60 == 0) return l.pick(ko: '${minutes ~/ 60}시간 전', en: '${minutes ~/ 60} hours before', ja: '${minutes ~/ 60}時間前', vi: 'Trước ${minutes ~/ 60} giờ');
+        return l.pick(ko: '알림 설정', en: 'Reminder setting', ja: '通知設定', vi: 'Cài đặt nhắc nhở');
     }
   }
 
@@ -839,9 +1677,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _refreshPermissionStatus();
     if (!_notificationPermissionOk || !_exactAlarmPermissionOk) {
       await _showPermissionGuide(
-        title: '알림 설정이 필요해요',
-        message: '일정 알림을 정확한 시간에 받으려면 알림 권한과 알람 및 리마인더 권한이 필요합니다.',
-        actionLabel: '설정 확인',
+        title: L.of(context).pick(ko: '알림 설정이 필요해요', en: 'Reminder setup needed', ja: '通知設定が必要です', vi: 'Cần cài đặt nhắc nhở'),
+        message: L.of(context).pick(ko: '일정 알림을 정확한 시간에 받으려면 알림 권한과 알람 및 리마인더 권한이 필요합니다.', en: 'Notification and exact alarm permissions are needed to receive reminders at the right time.', ja: '予定通知を正確な時刻に受け取るには通知権限とアラーム権限が必要です。', vi: 'Cần quyền thông báo và báo thức chính xác để nhận nhắc nhở đúng giờ.'),
+        actionLabel: L.of(context).pick(ko: '설정 확인', en: 'Check settings', ja: '設定を確認', vi: 'Kiểm tra cài đặt'),
         onAction: () async {
           await NotificationService.requestNotificationPermission();
           await NotificationService.requestExactAlarmPermission();
@@ -907,26 +1745,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       decoration: BoxDecoration(color: const Color(0xFFF6F7FB), borderRadius: BorderRadius.circular(22)),
                       child: Column(
                         children: [
-                          Text('${_daysLeft(item)}일', style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                          Text(L.of(context).pick(ko: '${_daysLeft(item)}일', en: 'D-${_daysLeft(item)}', ja: 'あと${_daysLeft(item)}日', vi: 'Còn ${_daysLeft(item)} ngày'), style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
                           const SizedBox(height: 4),
                           Text(_remainText(item), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
                         ],
                       ),
                     ),
                     const SizedBox(height: 18),
-                    _detailRow(Icons.calendar_month, '날짜', _fullDate(_effectiveTarget(item))),
-                    _detailRow(Icons.schedule, '시간', _timeText(item.targetTime)),
-                    _detailRow(Icons.repeat, '반복', _repeatText(item.repeatType)),
-                    _detailRow(Icons.notifications_none_rounded, '알림', _alarmText(item.alarmMinutesBefore)),
+                    _detailRow(Icons.calendar_month, L.of(context).date, _fullDate(_effectiveTarget(item))),
+                    _detailRow(Icons.schedule, L.of(context).time, _timeText(item.targetTime)),
+                    _detailRow(Icons.repeat, L.of(context).repeat, _repeatText(item.repeatType)),
+                    _detailRow(Icons.notifications_none_rounded, L.of(context).reminder, _alarmText(item.alarmMinutesBefore)),
                     const SizedBox(height: 16),
-                    const Text('메모', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                    Text(L.of(context).memo, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
                     const SizedBox(height: 8),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(color: const Color(0xFFF6F7FB), borderRadius: BorderRadius.circular(18)),
                       child: Text(
-                        item.memo.trim().isEmpty ? '메모 없음' : item.memo.trim(),
+                        item.memo.trim().isEmpty ? L.of(context).noMemo : item.memo.trim(),
                         style: const TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w600, color: Color(0xFF374151)),
                       ),
                     ),
@@ -940,7 +1778,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               _openEditor(item: item);
                             },
                             style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                            child: const Text('편집', style: TextStyle(fontWeight: FontWeight.w700)),
+                            child: Text(L.of(context).edit, style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -951,7 +1789,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               _confirmDelete(item);
                             },
                             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF111827), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                            child: const Text('삭제', style: TextStyle(fontWeight: FontWeight.w700)),
+                            child: Text(L.of(context).delete, style: TextStyle(fontWeight: FontWeight.w700)),
                           ),
                         ),
                       ],
@@ -986,11 +1824,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('삭제할까요?'),
-        content: Text('「${item.title}」 일정을 삭제합니다.'),
+        title: Text(L.of(context).pick(ko: '삭제할까요?', en: 'Delete this event?', ja: '削除しますか？', vi: 'Xóa sự kiện này?')),
+        content: Text(L.of(context).pick(ko: '「${item.title}」 일정을 삭제합니다.', en: 'Delete “${item.title}”?', ja: '「${item.title}」を削除します。', vi: 'Xóa “${item.title}”?')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(L.of(context).cancel)),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(L.of(context).delete)),
         ],
       ),
     );
@@ -1000,7 +1838,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _copyItem(DdayItem item) async {
     final copy = item.copyWith(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
-      title: '${item.title} 복사본',
+      title: L.of(context).pick(ko: '${item.title} 복사본', en: '${item.title} copy', ja: '${item.title} コピー', vi: 'Bản sao ${item.title}'),
       createdAt: DateTime.now(),
     );
     await _upsertItem(copy);
@@ -1008,8 +1846,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _shareItem(DdayItem item) async {
     final target = _effectiveTarget(item);
-    final repeat = item.repeatType == 'yearly' ? ' (매년)' : '';
-    final text = '${item.title}\n${_fullDate(target)}$repeat\n\nD-${_daysLeft(item)}일\n${_remainText(item)}';
+    final repeat = item.repeatType == 'yearly' ? L.of(context).pick(ko: ' (매년)', en: ' (yearly)', ja: ' (毎年)', vi: ' (hằng năm)') : '';
+    final text = '${item.title}\n${_fullDate(target)}$repeat\n\nD-${_daysLeft(item)}\n${_remainText(item)}';
     await Share.share(text);
   }
 
@@ -1025,19 +1863,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _menuTile(Icons.ios_share, '공유', () {
+              _menuTile(Icons.ios_share, L.of(context).share, () {
                 Navigator.pop(context);
                 _shareItem(item);
               }),
-              _menuTile(Icons.edit, '편집', () {
+              _menuTile(Icons.edit, L.of(context).edit, () {
                 Navigator.pop(context);
                 _openEditor(item: item);
               }),
-              _menuTile(Icons.copy, '복사본 만들기', () {
+              _menuTile(Icons.copy, L.of(context).copy, () {
                 Navigator.pop(context);
                 _copyItem(item);
               }),
-              _menuTile(Icons.delete_outline, '삭제', () {
+              _menuTile(Icons.delete_outline, L.of(context).delete, () {
                 Navigator.pop(context);
                 _confirmDelete(item);
               }, danger: true),
@@ -1056,15 +1894,50 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  void _showWidgetPlanSheet() {
-    showModalBottomSheet(
+  Future<void> _requestPinHomeWidget({required bool wide}) async {
+    final providerName = wide ? 'DdayWidgetProviderWide' : 'DdayWidgetProvider';
+    final widgetLabel = wide ? L.of(context).pick(ko: '넓은 위젯(2개 표시)', en: 'Wide widget (2 events)', ja: '横長ウィジェット（2件）', vi: 'Widget rộng (2 sự kiện)') : L.of(context).pick(ko: '작은 위젯(1개 표시)', en: 'Small widget (1 event)', ja: '小さいウィジェット（1件）', vi: 'Widget nhỏ (1 sự kiện)');
+
+    await _updateHomeWidget();
+
+    bool supported = false;
+    try {
+      supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+    } catch (_) {
+      supported = false;
+    }
+
+    if (!mounted) return;
+
+    if (!supported) {
+      await _showManualWidgetGuide(widgetLabel);
+      return;
+    }
+
+    try {
+      await HomeWidget.requestPinWidget(
+        name: providerName,
+        androidName: providerName,
+        qualifiedAndroidName: 'com.example.dday_app.$providerName',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(L.of(context).pick(ko: '$widgetLabel 추가 요청을 보냈습니다. 홈 화면에서 확인해보세요.', en: '$widgetLabel add request sent. Check your home screen.', ja: '$widgetLabel の追加リクエストを送信しました。ホーム画面を確認してください。', vi: 'Đã gửi yêu cầu thêm $widgetLabel. Hãy kiểm tra màn hình chính.'))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      await _showManualWidgetGuide(widgetLabel);
+    }
+  }
+
+  Future<void> _showManualWidgetGuide(String widgetLabel) async {
+    await showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => SafeArea(
         child: Container(
           margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1076,24 +1949,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(color: const Color(0xFFEEF4FF), borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.widgets_outlined, color: Color(0xFF2F80ED)),
+                    child: const Icon(Icons.touch_app_rounded, color: Color(0xFF2F80ED)),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text('홈화면 위젯 다음 단계', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                  Expanded(
+                    child: Text(L.of(context).pick(ko: '$widgetLabel 추가 방법', en: 'How to add $widgetLabel', ja: '$widgetLabel の追加方法', vi: 'Cách thêm $widgetLabel'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              const Text(
-                '현재 앱 내부 알림 기능은 안정화했고, 다음 작업은 Android 홈 화면에 붙는 네이티브 위젯입니다.',
-                style: TextStyle(fontSize: 14.5, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+              Text(
+                L.of(context).pick(ko: '이 휴대폰 런처에서는 앱에서 바로 위젯을 추가할 수 없어요. 아래 순서로 직접 추가해주세요.', en: 'This launcher does not support adding widgets directly from the app. Please add it manually.', ja: 'このランチャーではアプリから直接ウィジェットを追加できません。以下の手順で追加してください。', vi: 'Launcher này không hỗ trợ thêm widget trực tiếp từ ứng dụng. Hãy thêm thủ công theo các bước sau.'),
+                style: TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
               ),
               const SizedBox(height: 14),
-              _widgetPlanRow('1', 'home_widget 패키지 추가', 'Flutter 데이터와 Android 위젯을 연결'),
-              _widgetPlanRow('2', '최근 D-day 1개 저장', 'SharedPreferences 데이터를 위젯용으로 별도 저장'),
-              _widgetPlanRow('3', 'Android 위젯 레이아웃 제작', '1x1 / 2x1 크기부터 안전하게 시작'),
-              _widgetPlanRow('4', '일정 저장·삭제 시 위젯 갱신', '앱을 열지 않아도 최신 D-day 표시'),
+              _widgetPlanRow('1', L.of(context).pick(ko: '홈 화면 빈 공간 길게 누르기', en: 'Long-press empty home screen space', ja: 'ホーム画面の空きスペースを長押し', vi: 'Nhấn giữ khoảng trống màn hình chính'), L.of(context).pick(ko: '아이콘이 없는 빈 공간을 꾹 눌러주세요.', en: 'Press and hold a blank area without icons.', ja: 'アイコンのない空きスペースを長押ししてください。', vi: 'Nhấn giữ khu vực trống không có biểu tượng.')), 
+              _widgetPlanRow('2', L.of(context).pick(ko: '위젯 메뉴 선택', en: 'Choose widgets', ja: 'ウィジェットメニューを選択', vi: 'Chọn menu widget'), L.of(context).pick(ko: '위젯 목록에서 TickDay를 찾습니다.', en: 'Find TickDay in the widget list.', ja: 'ウィジェット一覧からTickDayを探します。', vi: 'Tìm TickDay trong danh sách widget.')), 
+              _widgetPlanRow('3', L.of(context).pick(ko: '원하는 크기 선택', en: 'Choose a size', ja: 'サイズを選択', vi: 'Chọn kích thước'), L.of(context).pick(ko: '작은 위젯은 1개, 넓은 위젯은 2개 일정을 보여줍니다.', en: 'Small shows 1 event; wide shows 2 events.', ja: '小さいウィジェットは1件、横長は2件表示します。', vi: 'Widget nhỏ hiển thị 1 sự kiện; widget rộng hiển thị 2 sự kiện.')), 
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -1104,11 +1976,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text('확인', style: TextStyle(fontWeight: FontWeight.w700)),
+                  child: Text(L.of(context).confirm, style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  WidgetPreviewData _toWidgetPreviewData(DdayItem item) {
+    return WidgetPreviewData(
+      dday: _dDayText(item),
+      title: item.title,
+      remain: _widgetRemainText(item),
+      emotion: _cardEmotionLine(item),
+      progress: _progress(item),
+      colorValue: _urgencyColor(item).value,
+    );
+  }
+
+  void _showWidgetPlanSheet() {
+    final previewItems = _nearestWidgetItems(2).map(_toWidgetPreviewData).toList();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WidgetPreviewPage(
+          items: previewItems,
+          onAddSmall: () => _requestPinHomeWidget(wide: false),
+          onAddWide: () => _requestPinHomeWidget(wide: true),
         ),
       ),
     );
@@ -1141,6 +2037,200 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
   }
+
+
+  Widget _buildAppDrawer() {
+    final l = L.of(context);
+    final currentCode = Localizations.localeOf(context).languageCode;
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF7A3E91), Color(0xFF9B6BD3)],
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(18)),
+                    child: const Icon(Icons.event_available_rounded, color: Colors.white, size: 32),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text('TickDay', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
+                  const SizedBox(height: 4),
+                  Text(l.subtitle, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFFEDE9FE))),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                children: [
+                  _drawerTile(Icons.home_rounded, l.pick(ko: '전체 일정', en: 'All events', ja: 'すべての予定', vi: 'Tất cả sự kiện'), () => Navigator.pop(context), selected: true),
+                  _drawerTile(Icons.widgets_rounded, l.pick(ko: '홈 위젯 추가', en: 'Add home widget', ja: 'ホームウィジェット追加', vi: 'Thêm widget'), () { Navigator.pop(context); _showWidgetPlanSheet(); }),
+                  _drawerTile(Icons.notifications_active_rounded, l.pick(ko: '알림 설정', en: 'Reminder settings', ja: '通知設定', vi: 'Cài đặt nhắc nhở'), () { Navigator.pop(context); setState(() => _permissionCardExpanded = true); }),
+                  _drawerTile(Icons.language_rounded, l.pick(ko: '언어 설정', en: 'Language', ja: '言語設定', vi: 'Ngôn ngữ'), () { Navigator.pop(context); _showLanguageSheet(); }, trailingText: _languageName(currentCode)),
+                  _drawerTile(Icons.palette_rounded, l.pick(ko: '테마 설정', en: 'Theme', ja: 'テーマ', vi: 'Giao diện'), () { Navigator.pop(context); _showThemeComingSoon(); }),
+                  _drawerTile(Icons.workspace_premium_rounded, l.pick(ko: '프리미엄', en: 'Premium', ja: 'プレミアム', vi: 'Premium'), () { Navigator.pop(context); _showPremiumComingSoon(); }),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 18, vertical: 8), child: Divider(height: 1)),
+                  _drawerTile(Icons.mail_outline_rounded, l.pick(ko: '문의하기', en: 'Contact us', ja: 'お問い合わせ', vi: 'Liên hệ'), () { Navigator.pop(context); _showInfoSnack(l.pick(ko: '문의 기능은 설정 메뉴에서 곧 제공됩니다.', en: 'Contact support will be available soon.', ja: 'お問い合わせ機能はまもなく提供されます。', vi: 'Tính năng liên hệ sẽ sớm có.')); }),
+                  _drawerTile(Icons.privacy_tip_outlined, l.pick(ko: '개인정보 처리방침', en: 'Privacy policy', ja: 'プライバシーポリシー', vi: 'Chính sách bảo mật'), () { Navigator.pop(context); _showInfoSnack(l.pick(ko: '개인정보 처리방침은 출시 전에 연결합니다.', en: 'Privacy policy will be connected before launch.', ja: '公開前にプライバシーポリシーを接続します。', vi: 'Chính sách bảo mật sẽ được thêm trước khi phát hành.')); }),
+                  _drawerTile(Icons.description_outlined, l.pick(ko: '이용약관', en: 'Terms of use', ja: '利用規約', vi: 'Điều khoản sử dụng'), () { Navigator.pop(context); _showInfoSnack(l.pick(ko: '이용약관은 출시 전에 연결합니다.', en: 'Terms will be connected before launch.', ja: '公開前に利用規約を接続します。', vi: 'Điều khoản sẽ được thêm trước khi phát hành.')); }),
+                  _drawerTile(Icons.info_outline_rounded, l.pick(ko: '앱 정보', en: 'App info', ja: 'アプリ情報', vi: 'Thông tin ứng dụng'), () { Navigator.pop(context); _showAppInfoSheet(); }),
+                ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Text('Version 1.0.0', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF9CA3AF))),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerTile(IconData icon, String title, VoidCallback onTap, {bool selected = false, String? trailingText}) {
+    final color = selected ? const Color(0xFF7A3E91) : const Color(0xFF111827);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Material(
+        color: selected ? const Color(0xFFF5EEFF) : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: 14),
+                Expanded(child: Text(title, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: color))),
+                if (trailingText != null) Text(trailingText, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF7A3E91))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showLanguageSheet() async {
+    final l = L.of(context);
+    final currentCode = Localizations.localeOf(context).languageCode;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l.pick(ko: '언어 설정', en: 'Language', ja: '言語設定', vi: 'Ngôn ngữ'), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
+              const SizedBox(height: 6),
+              Text(l.pick(ko: '사용할 언어를 선택하세요.', en: 'Choose your language.', ja: '使用する言語を選択してください。', vi: 'Chọn ngôn ngữ bạn muốn dùng.'), style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
+              const SizedBox(height: 14),
+              _languageTile('ko', '🇰🇷', '한국어', currentCode),
+              _languageTile('en', '🇺🇸', 'English', currentCode),
+              _languageTile('ja', '🇯🇵', '日本語', currentCode),
+              _languageTile('vi', '🇻🇳', 'Tiếng Việt', currentCode),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: const Color(0xFFF5EEFF), borderRadius: BorderRadius.circular(16)),
+                child: Text(l.pick(ko: '언어는 언제든지 변경할 수 있어요. 위젯 문구도 함께 바뀝니다.', en: 'You can change the language anytime. Widget messages update too.', ja: '言語はいつでも変更できます。ウィジェットの文言も変わります。', vi: 'Bạn có thể đổi ngôn ngữ bất cứ lúc nào. Nội dung widget cũng sẽ đổi theo.'), style: const TextStyle(fontSize: 13.5, height: 1.35, fontWeight: FontWeight.w700, color: Color(0xFF6D3E91))),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _languageTile(String code, String flag, String label, String currentCode) {
+    final selected = currentCode == code;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: selected ? const Color(0xFFF9F5FF) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _setLanguage(code),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? const Color(0xFF7A3E91) : const Color(0xFFE5E7EB))),
+            child: Row(
+              children: [
+                Text(flag, style: const TextStyle(fontSize: 24)),
+                const SizedBox(width: 12),
+                Expanded(child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF111827)))),
+                Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? const Color(0xFF7A3E91) : const Color(0xFF9CA3AF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _setLanguage(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_localePrefsKey, code);
+    appLocaleNotifier.value = _localeFromCode(code);
+    if (!mounted) return;
+    Navigator.pop(context);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
+    _refreshNow();
+  }
+
+  void _showThemeComingSoon() {
+    _showInfoSnack(L.of(context).pick(ko: '테마 설정은 다음 업데이트에서 제공됩니다.', en: 'Theme settings are coming in the next update.', ja: 'テーマ設定は次回アップデートで提供予定です。', vi: 'Cài đặt giao diện sẽ có trong bản cập nhật tới.'));
+  }
+
+  void _showPremiumComingSoon() {
+    _showInfoSnack(L.of(context).pick(ko: '프리미엄 기능은 출시 후 추가 예정입니다.', en: 'Premium features will be added after launch.', ja: 'プレミアム機能は公開後に追加予定です。', vi: 'Tính năng Premium sẽ được thêm sau khi phát hành.'));
+  }
+
+  void _showInfoSnack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  void _showAppInfoSheet() {
+    showAboutDialog(
+      context: context,
+      applicationName: 'TickDay',
+      applicationVersion: '1.0.0',
+      applicationIcon: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(color: const Color(0xFFF5EEFF), borderRadius: BorderRadius.circular(14)),
+        child: const Icon(Icons.event_available_rounded, color: Color(0xFF7A3E91)),
+      ),
+      children: [Text(L.of(context).pick(ko: '소중한 날을 놓치지 않도록 도와주는 D-day 알림 앱입니다.', en: 'A countdown and reminder app for your important days.', ja: '大切な日を忘れないためのカウントダウン通知アプリです。', vi: 'Ứng dụng đếm ngược và nhắc nhở cho những ngày quan trọng.'))],
+    );
+  }
+
 
   void _showAppMenu() {
     showModalBottomSheet(
@@ -1207,26 +2297,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      compactTile(Icons.notifications_active_rounded, '즉시 테스트 알림', () async {
+                      compactTile(Icons.notifications_active_rounded, L.of(context).pick(ko: '즉시 테스트 알림', en: 'Send test notification', ja: 'テスト通知を送信', vi: 'Gửi thông báo thử'), () async {
                         Navigator.pop(sheetContext);
-                        await NotificationService.showNow();
+                        await NotificationService.showNow(title: L.of(context).pick(ko: '테스트 알림', en: 'Test notification', ja: 'テスト通知', vi: 'Thông báo thử'), body: L.of(context).pick(ko: '이 알림이 보이면 기본 알림은 성공입니다.', en: 'If you see this, basic notifications are working.', ja: 'この通知が見えれば基本通知は正常です。', vi: 'Nếu bạn thấy thông báo này, thông báo cơ bản hoạt động.')); 
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('즉시 테스트 알림을 보냈습니다.')));
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(L.of(context).pick(ko: '즉시 테스트 알림을 보냈습니다.', en: 'Test notification sent.', ja: 'テスト通知を送信しました。', vi: 'Đã gửi thông báo thử.'))));
                       }),
-                      compactTile(Icons.timer_rounded, '5초 뒤 예약 테스트', () async {
+                      compactTile(Icons.timer_rounded, L.of(context).pick(ko: '5초 뒤 예약 테스트', en: 'Schedule test in 5 sec', ja: '5秒後の予約テスト', vi: 'Thử đặt sau 5 giây'), () async {
                         Navigator.pop(sheetContext);
                         final ok = await NotificationService.schedule(
                           id: 999002,
-                          title: '예약 테스트 알림',
-                          body: '5초 뒤 예약 알림이 정상 작동했습니다.',
+                          title: L.of(context).pick(ko: '예약 테스트 알림', en: 'Scheduled test notification', ja: '予約テスト通知', vi: 'Thông báo thử đã đặt'),
+                          body: L.of(context).pick(ko: '5초 뒤 예약 알림이 정상 작동했습니다.', en: 'The 5-second scheduled notification worked.', ja: '5秒後の予約通知が正常に動作しました。', vi: 'Thông báo đặt sau 5 giây đã hoạt động.'),
                           scheduledAt: DateTime.now().add(const Duration(seconds: 5)),
+                          payload: '__test__',
                         );
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(ok ? '5초 뒤 예약 테스트를 걸었습니다.' : '예약 테스트 등록에 실패했습니다. 알림/정확한 알람 권한을 확인해주세요.')),
+                          SnackBar(content: Text(ok ? L.of(context).pick(ko: '5초 뒤 예약 테스트를 걸었습니다.', en: 'Scheduled a test notification in 5 seconds.', ja: '5秒後の予約テストを設定しました。', vi: 'Đã đặt thông báo thử sau 5 giây.') : L.of(context).pick(ko: '예약 테스트 등록에 실패했습니다. 알림/정확한 알람 권한을 확인해주세요.', en: 'Failed to schedule test. Check notification/exact alarm permissions.', ja: '予約テストに失敗しました。通知／正確なアラーム権限を確認してください。', vi: 'Không thể đặt thử. Hãy kiểm tra quyền thông báo/báo thức chính xác.'))),
                         );
                       }),
-                      compactTile(Icons.widgets_outlined, '홈화면 위젯 설계 보기', () {
+                      compactTile(Icons.widgets_outlined, L.of(context).addHomeWidget, () {
                         Navigator.pop(sheetContext);
                         _showWidgetPlanSheet();
                       }),
@@ -1246,6 +2337,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.dark),
       child: Scaffold(
+        key: _scaffoldKey,
+        drawer: _buildAppDrawer(),
         floatingActionButton: FloatingActionButton.large(
           onPressed: () => _openEditor(),
           backgroundColor: const Color(0xFF2F80ED),
@@ -1300,7 +2393,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         padding: const EdgeInsets.fromLTRB(22, 12, 22, 10),
         child: Row(
           children: [
-            _roundButton(Icons.menu, () {}),
+            _roundButton(Icons.menu, () => _scaffoldKey.currentState?.openDrawer()),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1352,15 +2445,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ? const Color(0xFFF59E0B)
             : const Color(0xFF16A34A);
     final statusText = hasCriticalIssue
-        ? '설정 필요'
+        ? L.of(context).settingsNeeded
         : hasWarning
-            ? '주의'
-            : '핵심 정상';
+            ? L.of(context).caution
+            : L.of(context).permissionOk;
     final subtitle = hasCriticalIssue
-        ? '알림 권한이 꺼져 있어요. 눌러서 확인하세요.'
+        ? L.of(context).pick(ko: '알림 권한이 꺼져 있어요. 눌러서 확인하세요.', en: 'Notifications are off. Tap to check.', ja: '通知がオフです。タップして確認してください。', vi: 'Thông báo đang tắt. Nhấn để kiểm tra.')
         : hasWarning
-            ? '정확한 알람 권한을 확인해주세요.'
-            : '기본 알림과 정확한 알람이 정상입니다.';
+            ? L.of(context).pick(ko: '정확한 알람 권한을 확인해주세요.', en: 'Please check exact alarm permission.', ja: '正確なアラーム権限を確認してください。', vi: 'Hãy kiểm tra quyền báo thức chính xác.')
+            : L.of(context).permissionOkSubtitle;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
@@ -1423,14 +2516,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   const SizedBox(height: 8),
                   _permissionRow(
                     icon: Icons.notifications_none_rounded,
-                    title: '기본 알림',
+                    title: L.of(context).pick(ko: '기본 알림', en: 'Basic notifications', ja: '基本通知', vi: 'Thông báo cơ bản'),
                     ok: _notificationPermissionOk,
-                    okText: '정상',
-                    badText: '설정 필요',
+                    okText: L.of(context).normal,
+                    badText: L.of(context).settingsNeeded,
                     onTap: () => _showPermissionGuide(
-                      title: '기본 알림 권한',
-                      message: 'D-day 일정 알림을 받으려면 앱 알림 권한이 켜져 있어야 합니다.',
-                      actionLabel: '알림 권한 허용',
+                      title: L.of(context).pick(ko: '기본 알림 권한', en: 'Notification permission', ja: '通知権限', vi: 'Quyền thông báo'),
+                      message: L.of(context).pick(ko: 'D-day 일정 알림을 받으려면 앱 알림 권한이 켜져 있어야 합니다.', en: 'Turn on app notifications to receive D-day reminders.', ja: 'D-day通知を受け取るにはアプリ通知をオンにしてください。', vi: 'Bật thông báo ứng dụng để nhận nhắc nhở D-day.'),
+                      actionLabel: L.of(context).pick(ko: '알림 권한 허용', en: 'Allow notifications', ja: '通知を許可', vi: 'Cho phép thông báo'),
                       onAction: () async {
                         await NotificationService.requestNotificationPermission();
                         await AppSettings.openAppSettings();
@@ -1439,14 +2532,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ),
                   _permissionRow(
                     icon: Icons.alarm_rounded,
-                    title: '정확한 알람',
+                    title: L.of(context).pick(ko: '정확한 알람', en: 'Exact alarms', ja: '正確なアラーム', vi: 'Báo thức chính xác'),
                     ok: _exactAlarmPermissionOk,
-                    okText: '정상',
-                    badText: '설정 필요',
+                    okText: L.of(context).normal,
+                    badText: L.of(context).settingsNeeded,
                     onTap: () => _showPermissionGuide(
-                      title: '알람 및 리마인더 권한',
-                      message: '정확한 시간에 예약 알림을 울리려면 “알람 및 리마인더” 권한이 필요합니다.',
-                      actionLabel: '설정 열기',
+                      title: L.of(context).pick(ko: '알람 및 리마인더 권한', en: 'Alarm & reminder permission', ja: 'アラームとリマインダー権限', vi: 'Quyền báo thức & nhắc nhở'),
+                      message: L.of(context).pick(ko: '정확한 시간에 예약 알림을 울리려면 “알람 및 리마인더” 권한이 필요합니다.', en: 'Exact alarm permission is needed for reminders to ring at the right time.', ja: '正確な時刻に通知するには「アラームとリマインダー」権限が必要です。', vi: 'Cần quyền báo thức chính xác để nhắc đúng giờ.'),
+                      actionLabel: L.of(context).pick(ko: '설정 열기', en: 'Open settings', ja: '設定を開く', vi: 'Mở cài đặt'),
                       onAction: () async {
                         await NotificationService.requestExactAlarmPermission();
                         await AppSettings.openAppSettings();
@@ -1455,56 +2548,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ),
                   _permissionRow(
                     icon: Icons.battery_saver_outlined,
-                    title: '배터리 최적화',
+                    title: L.of(context).pick(ko: '배터리 최적화', en: 'Battery optimization', ja: 'バッテリー最適化', vi: 'Tối ưu pin'),
                     ok: true,
-                    okText: '정상',
-                    badText: '안내',
+                    okText: L.of(context).normal,
+                    badText: L.of(context).pick(ko: '안내', en: 'Guide', ja: '案内', vi: 'Hướng dẫn'),
                     onTap: () => _showPermissionGuide(
-                      title: '배터리 최적화 해제 안내',
-                      message: '일부 휴대폰은 배터리 절약 기능 때문에 예약 알림이 늦게 울릴 수 있습니다. 앱 정보 또는 배터리 설정에서 제한 없음 / 최적화 제외로 설정하면 더 안정적입니다.',
-                      actionLabel: '앱 설정 열기',
+                      title: L.of(context).pick(ko: '배터리 최적화 해제 안내', en: 'Battery optimization guide', ja: 'バッテリー最適化解除ガイド', vi: 'Hướng dẫn tối ưu pin'),
+                      message: L.of(context).pick(ko: '일부 휴대폰은 배터리 절약 기능 때문에 예약 알림이 늦게 울릴 수 있습니다. 앱 정보 또는 배터리 설정에서 제한 없음 / 최적화 제외로 설정하면 더 안정적입니다.', en: 'Some phones delay reminders because of battery saving. Set TickDay to unrestricted or exclude it from optimization for better reliability.', ja: '一部の端末では省電力機能により通知が遅れることがあります。アプリ情報またはバッテリー設定で制限なし／最適化除外にすると安定します。', vi: 'Một số điện thoại có thể báo trễ do tiết kiệm pin. Hãy đặt TickDay không giới hạn hoặc loại khỏi tối ưu pin để ổn định hơn.'),
+                      actionLabel: L.of(context).pick(ko: '앱 설정 열기', en: 'Open app settings', ja: 'アプリ設定を開く', vi: 'Mở cài đặt ứng dụng'),
                       onAction: () => AppSettings.openAppSettings(),
                     ),
                     muted: true,
                   ),
                   _permissionRow(
                     icon: Icons.lock_outline_rounded,
-                    title: '잠금화면 표시',
+                    title: L.of(context).pick(ko: '잠금화면 표시', en: 'Lock screen display', ja: 'ロック画面表示', vi: 'Hiển thị màn hình khóa'),
                     ok: true,
-                    okText: '확인 필요',
-                    badText: '확인 필요',
+                    okText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
+                    badText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
                     onTap: () => _showPermissionGuide(
-                      title: '잠금화면 알림 표시',
-                      message: '잠금화면 알림은 앱에서 직접 켤 수 없고 휴대폰 설정에서 켜야 합니다. 경로 예시: 설정 → 알림 → 잠금화면 알림 또는 설정 → 잠금화면 → 알림',
-                      actionLabel: '앱 설정 열기',
+                      title: L.of(context).pick(ko: '잠금화면 알림 표시', en: 'Lock screen notifications', ja: 'ロック画面通知', vi: 'Thông báo màn hình khóa'),
+                      message: L.of(context).pick(ko: '잠금화면 알림은 앱에서 직접 켤 수 없고 휴대폰 설정에서 켜야 합니다. 경로 예시: 설정 → 알림 → 잠금화면 알림 또는 설정 → 잠금화면 → 알림', en: 'Lock screen notifications must be enabled in your phone settings. Example path: Settings → Notifications → Lock screen notifications.', ja: 'ロック画面通知は端末設定でオンにする必要があります。例: 設定 → 通知 → ロック画面通知。', vi: 'Thông báo màn hình khóa cần bật trong cài đặt điện thoại. Ví dụ: Cài đặt → Thông báo → Thông báo màn hình khóa.'),
+                      actionLabel: L.of(context).pick(ko: '앱 설정 열기', en: 'Open app settings', ja: 'アプリ設定を開く', vi: 'Mở cài đặt ứng dụng'),
                       onAction: () => AppSettings.openAppSettings(),
                     ),
                     muted: true,
                   ),
                   _permissionRow(
                     icon: Icons.dark_mode_outlined,
-                    title: 'AOD / 대기화면',
+                    title: L.of(context).pick(ko: 'AOD / 대기화면', en: 'AOD / standby screen', ja: 'AOD / 待受画面', vi: 'AOD / màn hình chờ'),
                     ok: true,
-                    okText: '확인 필요',
-                    badText: '확인 필요',
+                    okText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
+                    badText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
                     onTap: () => _showPermissionGuide(
-                      title: 'AOD / 대기화면 표시',
-                      message: 'Always On Display 표시는 기기 설정에 따라 달라집니다. 휴대폰 설정에서 AOD와 잠금화면 알림 표시가 켜져 있는지 확인해주세요.',
-                      actionLabel: '앱 설정 열기',
+                      title: L.of(context).pick(ko: 'AOD / 대기화면 표시', en: 'AOD / standby display', ja: 'AOD / 待受画面表示', vi: 'Hiển thị AOD / chờ'),
+                      message: L.of(context).pick(ko: 'Always On Display 표시는 기기 설정에 따라 달라집니다. 휴대폰 설정에서 AOD와 잠금화면 알림 표시가 켜져 있는지 확인해주세요.', en: 'Always On Display depends on your device settings. Check that AOD and lock screen notifications are enabled.', ja: 'Always On Displayは端末設定によって異なります。AODとロック画面通知がオンか確認してください。', vi: 'Always On Display phụ thuộc vào cài đặt thiết bị. Hãy kiểm tra AOD và thông báo màn hình khóa.'),
+                      actionLabel: L.of(context).pick(ko: '앱 설정 열기', en: 'Open app settings', ja: 'アプリ設定を開く', vi: 'Mở cài đặt ứng dụng'),
                       onAction: () => AppSettings.openAppSettings(),
                     ),
                     muted: true,
                   ),
                   _permissionRow(
                     icon: Icons.widgets_outlined,
-                    title: '홈화면 위젯',
+                    title: L.of(context).pick(ko: '홈화면 위젯', en: 'Home screen widget', ja: 'ホーム画面ウィジェット', vi: 'Widget màn hình chính'),
                     ok: false,
-                    okText: '정상',
-                    badText: '곧 제공',
+                    okText: L.of(context).normal,
+                    badText: L.of(context).pick(ko: '곧 제공', en: 'Available', ja: '利用可能', vi: 'Có sẵn'),
                     onTap: () => _showPermissionGuide(
-                      title: '홈화면 위젯',
-                      message: '홈화면에서 바로 보는 D-day 위젯은 다음 단계에서 추가할 기능입니다. 현재는 알림 기능을 먼저 안정화했습니다.',
-                      actionLabel: '확인',
+                      title: L.of(context).pick(ko: '홈화면 위젯', en: 'Home screen widget', ja: 'ホーム画面ウィジェット', vi: 'Widget màn hình chính'),
+                      message: L.of(context).pick(ko: '홈화면에서 바로 보는 D-day 위젯을 사용할 수 있어요. 홈 화면에서 TickDay 위젯을 추가해보세요.', en: 'You can use TickDay D-day widgets on your home screen. Add a TickDay widget from your launcher.', ja: 'ホーム画面でTickDayのD-dayウィジェットを使えます。ランチャーからTickDayウィジェットを追加してください。', vi: 'Bạn có thể dùng widget D-day TickDay trên màn hình chính. Hãy thêm widget TickDay từ launcher.'),
+                      actionLabel: L.of(context).confirm,
                       onAction: () async {},
                     ),
                     muted: true,
@@ -1515,7 +2608,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     child: TextButton.icon(
                       onPressed: _refreshPermissionStatus,
                       icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('상태 새로고침', style: TextStyle(fontWeight: FontWeight.w700)),
+                      label: Text(L.of(context).pick(ko: '상태 새로고침', en: 'Refresh status', ja: '状態を更新', vi: 'Làm mới trạng thái'), style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   ),
                 ],
@@ -1607,7 +2700,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                      child: const Text('나중에', style: TextStyle(fontWeight: FontWeight.w700)),
+                      child: Text(L.of(context).later, style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1664,7 +2757,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (notices.length == 1) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
-        child: SizedBox(height: 86, child: notices.first),
+        child: SizedBox(height: 124, child: notices.first),
       );
     }
 
@@ -1673,9 +2766,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: SizedBox(height: 86, child: notices[0])),
+          Expanded(child: SizedBox(height: 124, child: notices[0])),
           const SizedBox(width: 12),
-          Expanded(child: SizedBox(height: 86, child: notices[1])),
+          Expanded(child: SizedBox(height: 124, child: notices[1])),
         ],
       ),
     );
@@ -1692,7 +2785,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 9),
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 8),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(16),
@@ -1706,10 +2799,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             top: 0,
             left: 0,
             child: Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(color: iconBackgroundColor, borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, color: iconColor, size: 17),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(color: iconBackgroundColor, borderRadius: BorderRadius.circular(9)),
+              child: Icon(icon, color: iconColor, size: 16),
             ),
           ),
           Positioned(
@@ -1726,24 +2819,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           ),
           Positioned.fill(
-            top: 34,
-            right: 2,
+            top: 33,
+            right: 0,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12.6, height: 1.05, fontWeight: FontWeight.w700, color: Color(0xFF111827)),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10.5, height: 1.16, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
+                  softWrap: true,
+                  style: const TextStyle(fontSize: 12.1, height: 1.15, fontWeight: FontWeight.w800, color: Color(0xFF111827)),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  subtitle,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                  style: const TextStyle(fontSize: 9.8, height: 1.18, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                 ),
               ],
             ),
@@ -1756,31 +2851,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _sectionTitle() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 12, 22, 10),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Text(L.of(context).myEvents, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w700, color: Color(0xFF111827), letterSpacing: -0.5))),
-          OutlinedButton.icon(
-            onPressed: _showSortPicker,
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFE5E7EB)),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            icon: const Icon(Icons.tune_rounded, color: Color(0xFF2F80ED), size: 18),
-            label: Text(_sortText(_sortType), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+          Text(
+            L.of(context).myEvents,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w700, color: Color(0xFF111827), letterSpacing: -0.5),
           ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: _toggleViewMode,
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFE5E7EB)),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            icon: Icon(_isCardView ? Icons.view_list_rounded : Icons.grid_view_rounded, color: const Color(0xFF2F80ED), size: 19),
-            label: Text(_isCardView ? L.of(context).list : L.of(context).card, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _showSortPicker,
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.tune_rounded, color: Color(0xFF2F80ED), size: 18),
+                  label: Text(
+                    _sortText(_sortType),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF111827)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _toggleViewMode,
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: Icon(_isCardView ? Icons.view_list_rounded : Icons.grid_view_rounded, color: const Color(0xFF2F80ED), size: 19),
+                  label: Text(
+                    _isCardView ? L.of(context).list : L.of(context).card,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF111827)),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1814,16 +2934,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 18,
-          mainAxisSpacing: isLandscape ? 14 : 18,
+          mainAxisSpacing: isLandscape ? 14 : 14,
           mainAxisExtent: isLandscape ? 132 : null,
-          childAspectRatio: isLandscape ? 2.35 : 0.66,
+          childAspectRatio: isLandscape ? 2.35 : 0.82,
         ),
       ),
     );
   }
 
   Widget _ddayCard(DdayItem item) {
-    final color = Color(item.colorValue);
+    final color = _urgencyColor(item);
     final days = _daysLeft(item);
     final progress = _progress(item);
     final left = _timeLeft(item);
@@ -1834,8 +2954,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final radius = isLandscape ? 14.0 : 18.0;
     final cardPadding = isLandscape
         ? const EdgeInsets.fromLTRB(12, 8, 10, 8)
-        : const EdgeInsets.fromLTRB(14, 13, 12, 12);
-    final ddaySize = isLandscape ? 27.0 : 32.0;
+        : const EdgeInsets.fromLTRB(14, 11, 12, 8);
+    final ddaySize = isLandscape ? 27.0 : 30.0;
     final titleSize = isLandscape ? 12.8 : 13.2;
     final subtitleSize = isLandscape ? 10.3 : 11.2;
 
@@ -1936,7 +3056,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         ),
                       ],
                     ),
-                    SizedBox(height: isLandscape ? 7 : 14),
+                    SizedBox(height: isLandscape ? 7 : 8),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
@@ -1963,7 +3083,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         letterSpacing: -0.25,
                       ),
                     ),
-                    SizedBox(height: isLandscape ? 5 : 10),
+                    SizedBox(height: isLandscape ? 5 : 5),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(99),
                       child: LinearProgressIndicator(
@@ -1974,10 +3094,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                     ),
                     if (!isLandscape) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 5),
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.065),
                           borderRadius: BorderRadius.circular(10),
@@ -2039,7 +3159,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         itemCount: _items.length,
         itemBuilder: (context, index) {
           final item = _items[index];
-          final color = Color(item.colorValue);
+          final color = _urgencyColor(item);
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Material(
@@ -2055,7 +3175,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       Container(width: 46, height: 46, decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(14)), child: Icon(_iconData(item.icon), color: color, size: 24)),
                       const SizedBox(width: 14),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, letterSpacing: -0.2)), const SizedBox(height: 4), Text('${_fullDate(_effectiveTarget(item))} · ${_remainText(item)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF6B7280)))])),
-                      Text('${_daysLeft(item)}일', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.4)),
+                      Text(L.of(context).pick(ko: '${_daysLeft(item)}일', en: 'D-${_daysLeft(item)}', ja: 'あと${_daysLeft(item)}日', vi: 'Còn ${_daysLeft(item)} ngày'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.4)),
                       IconButton(onPressed: () => _showItemMenu(item), icon: const Icon(Icons.more_vert, color: Color(0xFF9CA3AF))),
                     ],
                   ),
@@ -2257,34 +3377,35 @@ class _EditPageState extends State<EditPage> {
     return '${two(time.hour)}:${two(time.minute)}';
   }
 
-  String _repeatText(String type) => type == 'yearly' ? '매년 반복' : '반복 안 함';
+  String _repeatText(String type) => type == 'yearly' ? L.of(context).yearlyRepeat : L.of(context).noRepeat;
 
   String _alarmText(int minutes) {
+    final l = L.of(context);
     switch (minutes) {
       case -1:
-        return '알림 안 함';
+        return l.pick(ko: '알림 안 함', en: 'No reminder', ja: '通知なし', vi: 'Không nhắc');
       case -2:
-        return '당일 오전 9시';
+        return l.pick(ko: '당일 오전 9시', en: 'Same day 9 AM', ja: '当日午前9時', vi: '9 giờ sáng cùng ngày');
       case 0:
-        return '정각 알림';
+        return l.pick(ko: '정각 알림', en: 'At event time', ja: '予定時刻', vi: 'Đúng giờ sự kiện');
       case 60:
-        return '1시간 전';
+        return l.pick(ko: '1시간 전', en: '1 hour before', ja: '1時間前', vi: 'Trước 1 giờ');
       case 180:
-        return '3시간 전';
+        return l.pick(ko: '3시간 전', en: '3 hours before', ja: '3時間前', vi: 'Trước 3 giờ');
       case 360:
-        return '6시간 전';
+        return l.pick(ko: '6시간 전', en: '6 hours before', ja: '6時間前', vi: 'Trước 6 giờ');
       case 720:
-        return '12시간 전';
+        return l.pick(ko: '12시간 전', en: '12 hours before', ja: '12時間前', vi: 'Trước 12 giờ');
       case 1440:
-        return '하루 전';
+        return l.pick(ko: '하루 전', en: '1 day before', ja: '1日前', vi: 'Trước 1 ngày');
       case 2880:
-        return '2일 전';
+        return l.pick(ko: '2일 전', en: '2 days before', ja: '2日前', vi: 'Trước 2 ngày');
       case 10080:
-        return '일주일 전';
+        return l.pick(ko: '일주일 전', en: '1 week before', ja: '1週間前', vi: 'Trước 1 tuần');
       default:
-        if (minutes > 0 && minutes % 1440 == 0) return '${minutes ~/ 1440}일 전';
-        if (minutes > 0 && minutes % 60 == 0) return '${minutes ~/ 60}시간 전';
-        return '알림 설정';
+        if (minutes > 0 && minutes % 1440 == 0) return l.pick(ko: '${minutes ~/ 1440}일 전', en: '${minutes ~/ 1440} days before', ja: '${minutes ~/ 1440}日前', vi: 'Trước ${minutes ~/ 1440} ngày');
+        if (minutes > 0 && minutes % 60 == 0) return l.pick(ko: '${minutes ~/ 60}시간 전', en: '${minutes ~/ 60} hours before', ja: '${minutes ~/ 60}時間前', vi: 'Trước ${minutes ~/ 60} giờ');
+        return l.pick(ko: '알림 설정', en: 'Reminder setting', ja: '通知設定', vi: 'Cài đặt nhắc nhở');
     }
   }
 
@@ -2343,10 +3464,10 @@ class _EditPageState extends State<EditPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('반복 설정', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: _ink)),
+                  Text(L.of(context).pick(ko: '반복 설정', en: 'Repeat settings', ja: '繰り返し設定', vi: 'Cài đặt lặp lại'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: _ink)),
                   const SizedBox(height: 10),
-                  _repeatOption('none', '반복 안 함', '한 번만 카운트다운'),
-                  _repeatOption('yearly', '매년 반복', '생일, 결혼기념일처럼 매년 반복'),
+                  _repeatOption('none', L.of(context).noRepeat, L.of(context).pick(ko: '한 번만 카운트다운', en: 'Countdown only once', ja: '一度だけカウントダウン', vi: 'Chỉ đếm ngược một lần')),
+                  _repeatOption('yearly', L.of(context).yearlyRepeat, L.of(context).pick(ko: '생일, 결혼기념일처럼 매년 반복', en: 'For birthdays and anniversaries', ja: '誕生日や記念日のように毎年繰り返し', vi: 'Dành cho sinh nhật, kỷ niệm')),
                 ],
               ),
             ),
@@ -2469,7 +3590,7 @@ class _EditPageState extends State<EditPage> {
                         children: [
                           Row(
                             children: [
-                              const Expanded(child: Text('알림 설정', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: _ink))),
+                              Expanded(child: Text(L.of(context).pick(ko: '알림 설정', en: 'Reminder settings', ja: '通知設定', vi: 'Cài đặt nhắc nhở'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, color: _ink))),
                               IconButton(
                                 visualDensity: VisualDensity.compact,
                                 onPressed: () => Navigator.pop(context),
@@ -2493,12 +3614,12 @@ class _EditPageState extends State<EditPage> {
                           ),
                           if (_alarmEnabled) ...[
                             const Divider(height: 20, color: _line),
-                            alarmOption(-2, '당일 오전 9시', '일정 당일 아침에 미리 알림'),
-                            alarmOption(0, '정각 알림', '일정 시간이 되었을 때'),
-                            alarmOption(60, '1시간 전', '중요한 약속 직전 알림'),
-                            alarmOption(1440, '하루 전', '기념일 전날 미리 알림'),
-                            alarmOption(2880, '2일 전', '준비가 필요한 일정'),
-                            alarmOption(10080, '일주일 전', '여행, 시험, 큰 일정'),
+                            alarmOption(-2, _alarmText(-2), L.of(context).pick(ko: '일정 당일 아침에 미리 알림', en: 'Remind me on the morning of the event', ja: '予定当日の朝に通知', vi: 'Nhắc vào sáng ngày sự kiện')),
+                            alarmOption(0, _alarmText(0), L.of(context).pick(ko: '일정 시간이 되었을 때', en: 'When the event time arrives', ja: '予定時刻になったとき', vi: 'Khi đến giờ sự kiện')),
+                            alarmOption(60, _alarmText(60), L.of(context).pick(ko: '중요한 약속 직전 알림', en: 'A quick reminder before an important event', ja: '大切な予定の直前に通知', vi: 'Nhắc ngay trước sự kiện quan trọng')),
+                            alarmOption(1440, _alarmText(1440), L.of(context).pick(ko: '기념일 전날 미리 알림', en: 'A day-before reminder', ja: '記念日の前日に通知', vi: 'Nhắc trước một ngày')),
+                            alarmOption(2880, _alarmText(2880), L.of(context).pick(ko: '준비가 필요한 일정', en: 'For events that need preparation', ja: '準備が必要な予定', vi: 'Cho sự kiện cần chuẩn bị')),
+                            alarmOption(10080, _alarmText(10080), L.of(context).pick(ko: '여행, 시험, 큰 일정', en: 'For trips, exams, and big events', ja: '旅行、試験、大きな予定に', vi: 'Cho chuyến đi, kỳ thi, sự kiện lớn')),
                           ],
                           const SizedBox(height: 12),
                           SizedBox(
@@ -2511,7 +3632,7 @@ class _EditPageState extends State<EditPage> {
                                 padding: const EdgeInsets.symmetric(vertical: 15),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                               ),
-                              child: const Text('완료', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                              child: Text(L.of(context).done, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                             ),
                           ),
                         ],
@@ -2539,9 +3660,9 @@ class _EditPageState extends State<EditPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('알림 사용', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink)),
+                  Text(L.of(context).pick(ko: '알림 사용', en: 'Use reminders', ja: '通知を使用', vi: 'Dùng nhắc nhở'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink)),
                   const SizedBox(height: 3),
-                  Text(_alarmEnabled ? _alarmText(_alarmMinutesBefore) : '알림을 보내지 않음', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _muted)),
+                  Text(_alarmEnabled ? _alarmText(_alarmMinutesBefore) : L.of(context).pick(ko: '알림을 보내지 않음', en: 'No reminder will be sent', ja: '通知を送信しません', vi: 'Không gửi nhắc nhở'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _muted)),
                 ],
               ),
             ),
@@ -2596,7 +3717,7 @@ class _EditPageState extends State<EditPage> {
   void _save() {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('제목을 입력해주세요.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(L.of(context).pick(ko: '제목을 입력해주세요.', en: 'Please enter a title.', ja: 'タイトルを入力してください。', vi: 'Vui lòng nhập tiêu đề.'))));
       return;
     }
     final old = widget.item;
@@ -2637,31 +3758,31 @@ class _EditPageState extends State<EditPage> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(child: _selectCard(Icons.calendar_month, '날짜', _fullDate(_date), _pickDate)),
+                        Expanded(child: _selectCard(Icons.calendar_month, L.of(context).date, _fullDate(_date), _pickDate)),
                         const SizedBox(width: 12),
-                        Expanded(child: _selectCard(Icons.schedule, '시간', _timeText(_time), _pickTime)),
+                        Expanded(child: _selectCard(Icons.schedule, L.of(context).time, _timeText(_time), _pickTime)),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    _wideSelectCard(Icons.repeat, '반복', _repeatText(_repeatType), _showRepeatPicker),
+                    _wideSelectCard(Icons.repeat, L.of(context).repeat, _repeatText(_repeatType), _showRepeatPicker),
                     const SizedBox(height: 12),
-                    _wideSelectCard(Icons.notifications_none_rounded, '알림', _alarmEnabled ? _alarmText(_alarmMinutesBefore) : '알림 안 함', _showAlarmPicker),
+                    _wideSelectCard(Icons.notifications_none_rounded, L.of(context).reminder, _alarmEnabled ? _alarmText(_alarmMinutesBefore) : L.of(context).pick(ko: '알림 안 함', en: 'No reminder', ja: '通知なし', vi: 'Không nhắc'), _showAlarmPicker),
                     const SizedBox(height: 12),
                     _memoBox(),
                     const SizedBox(height: 22),
-                    _sectionLabel('꾸미기'),
+                    _sectionLabel(L.of(context).decorate),
                     const SizedBox(height: 12),
                     _decorBox(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('아이콘', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _muted)),
+                          Text(L.of(context).icon, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _muted)),
                           const SizedBox(height: 12),
                           Wrap(spacing: 8, runSpacing: 8, children: _icons.map((e) => _iconChip(e)).toList()),
                           const SizedBox(height: 18),
                           const Divider(height: 1, color: Color(0xFFE5E7EB)),
                           const SizedBox(height: 18),
-                          const Text('색상', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _muted)),
+                          Text(L.of(context).color, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _muted)),
                           const SizedBox(height: 12),
                           Wrap(spacing: 13, runSpacing: 13, children: _colors.map((e) => _colorChip(e)).toList()),
                         ],
@@ -2686,7 +3807,7 @@ class _EditPageState extends State<EditPage> {
           const SizedBox(width: 4),
           Expanded(
             child: Text(
-              isEdit ? '일정 편집' : '새 일정',
+              isEdit ? L.of(context).editEvent : L.of(context).newEvent,
               style: const TextStyle(fontSize: 29, fontWeight: FontWeight.w700, color: _ink, letterSpacing: -0.8),
             ),
           ),
@@ -2698,7 +3819,7 @@ class _EditPageState extends State<EditPage> {
               padding: const EdgeInsets.symmetric(horizontal: 23, vertical: 15),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             ),
-            child: const Text('저장', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            child: Text(L.of(context).save, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -2706,14 +3827,14 @@ class _EditPageState extends State<EditPage> {
   }
 
   Widget _previewCard() {
-    final title = _titleController.text.trim().isEmpty ? '일정 제목' : _titleController.text.trim();
+    final title = _titleController.text.trim().isEmpty ? L.of(context).titleFallback : _titleController.text.trim();
     final days = _daysUntil();
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     return AnimatedBuilder(
       animation: _titleController,
       builder: (context, _) {
         final isTitleEmpty = _titleController.text.trim().isEmpty;
-        final liveTitle = isTitleEmpty ? '일정 제목' : _titleController.text.trim();
+        final liveTitle = isTitleEmpty ? L.of(context).titleFallback : _titleController.text.trim();
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.all(18),
@@ -2739,7 +3860,7 @@ class _EditPageState extends State<EditPage> {
                     SizedBox(height: isLandscape ? 2 : 4),
                     Text(liveTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: isTitleEmpty ? const Color(0xFFB7BDC8) : _ink, letterSpacing: -0.5)),
                     const SizedBox(height: 5),
-                    Text('${_fullDate(_date)} · ${_timeText(_time)} · ${_repeatText(_repeatType)} · ${_alarmEnabled ? _alarmText(_alarmMinutesBefore) : '알림 안 함'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _muted)),
+                    Text('${_fullDate(_date)} · ${_timeText(_time)} · ${_repeatText(_repeatType)} · ${_alarmEnabled ? _alarmText(_alarmMinutesBefore) : L.of(context).pick(ko: '알림 안 함', en: 'No reminder', ja: '通知なし', vi: 'Không nhắc')}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _muted)),
                   ],
                 ),
               ),
@@ -2762,7 +3883,7 @@ class _EditPageState extends State<EditPage> {
             child: TextField(
               controller: _titleController,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _ink),
-              decoration: const InputDecoration(hintText: '일정 제목', hintStyle: TextStyle(color: Color(0xFFB7BDC8), fontWeight: FontWeight.w700), border: InputBorder.none, isDense: true),
+              decoration: InputDecoration(hintText: L.of(context).titleFallback, hintStyle: TextStyle(color: Color(0xFFB7BDC8), fontWeight: FontWeight.w700), border: InputBorder.none, isDense: true),
             ),
           ),
         ],
@@ -2841,7 +3962,7 @@ class _EditPageState extends State<EditPage> {
               minLines: 1,
               maxLines: 3,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _ink),
-              decoration: const InputDecoration(hintText: '메모', hintStyle: TextStyle(color: Color(0xFFB7BDC8), fontWeight: FontWeight.w700), border: InputBorder.none),
+              decoration: InputDecoration(hintText: L.of(context).memo, hintStyle: TextStyle(color: Color(0xFFB7BDC8), fontWeight: FontWeight.w700), border: InputBorder.none),
             ),
           ),
         ],

@@ -5,37 +5,77 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:padding="10dp"
+    android:paddingLeft="9dp"
+    android:paddingTop="8dp"
+    android:paddingRight="9dp"
+    android:paddingBottom="8dp"
     android:background="@drawable/dday_widget_background">
 
-    <TextView
-        android:id="@+id/widget_dday"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:includeFontPadding="false"
-        android:maxLines="1"
-        android:text="D-3"
-        android:textColor="#7A3E91"
-        android:textSize="26sp"
-        android:textStyle="bold" />
+        android:layout_height="50dp">
+
+        <ImageView
+            android:layout_width="47dp"
+            android:layout_height="47dp"
+            android:layout_gravity="center"
+            android:alpha="0.10"
+            android:src="@drawable/ic_widget_calendar_faint" />
+
+        <TextView
+            android:id="@+id/widget_dday"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="D-3"
+            android:textColor="#7A3E91"
+            android:textSize="36sp"
+            android:textStyle="bold" />
+    </FrameLayout>
 
     <TextView
         android:id="@+id/widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:text="결혼기념일"
+        android:textColor="#111827"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <ProgressBar
+        android:id="@+id/widget_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="5dp"
+        android:layout_marginTop="7dp"
+        android:max="100"
+        android:progress="70"
+        android:progressDrawable="@drawable/dday_widget_progress" />
+
+    <TextView
+        android:id="@+id/widget_remain"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:ellipsize="end"
         android:gravity="center"
         android:includeFontPadding="false"
-        android:maxLines="2"
-        android:text="결혼기념일"
-        android:textColor="#111827"
-        android:textSize="13sp"
+        android:maxLines="1"
+        android:text="오늘 · 2시간 남음"
+        android:textColor="#6B7280"
+        android:textSize="12.5sp"
         android:textStyle="bold" />
 
     <TextView
-        android:id="@+id/widget_remain"
+        android:id="@+id/widget_message"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="5dp"
@@ -43,9 +83,8 @@
         android:gravity="center"
         android:includeFontPadding="false"
         android:maxLines="1"
-        android:text="2일 남음"
-        android:textColor="#6B7280"
-        android:textSize="10sp"
-        android:textStyle="bold" />
+        android:text="조금만 더 기다려요 💜"
+        android:textColor="#9A7BA8"
+        android:textSize="11.5sp" />
 
 </LinearLayout>
