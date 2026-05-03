@@ -45,7 +45,8 @@
             </intent-filter>
         </receiver>
 
-        <!-- TickDay home screen widget -->
+
+        <!-- TickDay 1x1 home screen widget -->
         <receiver
             android:name=".DdayWidgetProvider"
             android:exported="true">
@@ -55,6 +56,19 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/dday_widget_info" />
+        </receiver>
+
+
+        <!-- TickDay wide 2x1 home screen widget -->
+        <receiver
+            android:name=".DdayWidgetProviderWide"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/dday_widget_wide_info" />
         </receiver>
 
         <meta-data

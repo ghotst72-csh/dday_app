@@ -646,10 +646,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
 
   DdayItem? _nearestWidgetItem() {
-    if (_items.isEmpty) return null;
+    final items = _nearestWidgetItems(1);
+    return items.isEmpty ? null : items.first;
+  }
+
+  List<DdayItem> _nearestWidgetItems(int count) {
+    if (_items.isEmpty) return <DdayItem>[];
     final upcoming = List<DdayItem>.from(_items)
       ..sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
-    return upcoming.first;
+    return upcoming.take(count).toList();
   }
 
   String _widgetRemainText(DdayItem item) {
@@ -663,7 +668,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _updateHomeWidget() async {
     try {
-      final item = _nearestWidgetItem();
+      final widgetItems = _nearestWidgetItems(2);
+      final item = widgetItems.isEmpty ? null : widgetItems.first;
+
       if (item == null) {
         await HomeWidget.saveWidgetData<String>('widget_item_id', '');
         await HomeWidget.saveWidgetData<String>('widget_dday', 'D-Day');
@@ -688,10 +695,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         await HomeWidget.saveWidgetData<int>('widget_hour', item.targetTime.hour);
         await HomeWidget.saveWidgetData<int>('widget_minute', item.targetTime.minute);
       }
+
+      await _saveWideWidgetItem(1, widgetItems.isNotEmpty ? widgetItems[0] : null);
+      await _saveWideWidgetItem(2, widgetItems.length > 1 ? widgetItems[1] : null);
+
       await HomeWidget.updateWidget(androidName: 'DdayWidgetProvider');
+      await HomeWidget.updateWidget(androidName: 'DdayWidgetProviderWide');
     } catch (_) {
       // 홈 위젯이 아직 추가되지 않았거나 네이티브 위젯 초기화 전이어도 앱 기능은 그대로 유지합니다.
     }
+  }
+
+  Future<void> _saveWideWidgetItem(int index, DdayItem? item) async {
+    final prefix = 'widget_wide_${index}_';
+    if (item == null) {
+      await HomeWidget.saveWidgetData<String>('${prefix}item_id', '');
+      await HomeWidget.saveWidgetData<String>('${prefix}dday', '');
+      await HomeWidget.saveWidgetData<String>('${prefix}title', index == 1 ? '일정을 등록하세요' : '');
+      await HomeWidget.saveWidgetData<String>('${prefix}remain', index == 1 ? 'TickDay' : '');
+      await HomeWidget.saveWidgetData<int>('${prefix}target_millis', 0);
+      await HomeWidget.saveWidgetData<String>('${prefix}repeat_type', 'none');
+      await HomeWidget.saveWidgetData<int>('${prefix}month', 0);
+      await HomeWidget.saveWidgetData<int>('${prefix}day', 0);
+      await HomeWidget.saveWidgetData<int>('${prefix}hour', 0);
+      await HomeWidget.saveWidgetData<int>('${prefix}minute', 0);
+      return;
+    }
+
+    final target = _effectiveTarget(item);
+    await HomeWidget.saveWidgetData<String>('${prefix}item_id', item.id);
+    await HomeWidget.saveWidgetData<String>('${prefix}dday', _dDayText(item));
+    await HomeWidget.saveWidgetData<String>('${prefix}title', item.title);
+    await HomeWidget.saveWidgetData<String>('${prefix}remain', _widgetRemainText(item));
+    await HomeWidget.saveWidgetData<int>('${prefix}target_millis', target.millisecondsSinceEpoch);
+    await HomeWidget.saveWidgetData<String>('${prefix}repeat_type', item.repeatType);
+    await HomeWidget.saveWidgetData<int>('${prefix}month', item.targetDate.month);
+    await HomeWidget.saveWidgetData<int>('${prefix}day', item.targetDate.day);
+    await HomeWidget.saveWidgetData<int>('${prefix}hour', item.targetTime.hour);
+    await HomeWidget.saveWidgetData<int>('${prefix}minute', item.targetTime.minute);
   }
 
   Future<void> _setNoticeHidden(String key, bool value) async {
@@ -1224,6 +1265,98 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _requestPinHomeWidget({required bool wide}) async {
+    final providerName = wide ? 'DdayWidgetProviderWide' : 'DdayWidgetProvider';
+    final widgetLabel = wide ? '넓은 위젯(2개 표시)' : '작은 위젯(1개 표시)';
+
+    await _updateHomeWidget();
+
+    bool supported = false;
+    try {
+      supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+    } catch (_) {
+      supported = false;
+    }
+
+    if (!mounted) return;
+
+    if (!supported) {
+      await _showManualWidgetGuide(widgetLabel);
+      return;
+    }
+
+    try {
+      await HomeWidget.requestPinWidget(
+        name: providerName,
+        androidName: providerName,
+        qualifiedAndroidName: 'com.example.dday_app.$providerName',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$widgetLabel 추가 요청을 보냈습니다. 홈 화면에서 확인해보세요.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      await _showManualWidgetGuide(widgetLabel);
+    }
+  }
+
+  Future<void> _showManualWidgetGuide(String widgetLabel) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(color: const Color(0xFFEEF4FF), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.touch_app_rounded, color: Color(0xFF2F80ED)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('$widgetLabel 추가 방법', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                '이 휴대폰 런처에서는 앱에서 바로 위젯을 추가할 수 없어요. 아래 순서로 직접 추가해주세요.',
+                style: TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+              ),
+              const SizedBox(height: 14),
+              _widgetPlanRow('1', '홈 화면 빈 공간 길게 누르기', '아이콘이 없는 빈 공간을 꾹 눌러주세요.'),
+              _widgetPlanRow('2', '위젯 메뉴 선택', '위젯 목록에서 dday_app 또는 TickDay를 찾습니다.'),
+              _widgetPlanRow('3', '원하는 크기 선택', '작은 위젯은 1개, 넓은 위젯은 2개 일정을 보여줍니다.'),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2F80ED),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('확인', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showWidgetPlanSheet() {
     showModalBottomSheet(
       context: context,
@@ -1248,31 +1381,49 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
-                    child: Text('홈화면 위젯 다음 단계', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                    child: Text('홈 위젯 추가하기', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
               const Text(
-                '현재 앱 내부 알림 기능은 안정화했고, 다음 작업은 Android 홈 화면에 붙는 네이티브 위젯입니다.',
+                '홈 화면에서 가장 가까운 D-day를 바로 확인할 수 있어요. 원하는 크기의 위젯을 추가해보세요.',
                 style: TextStyle(fontSize: 14.5, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
               ),
               const SizedBox(height: 14),
-              _widgetPlanRow('1', 'home_widget 패키지 추가', 'Flutter 데이터와 Android 위젯을 연결'),
-              _widgetPlanRow('2', '최근 D-day 1개 저장', 'SharedPreferences 데이터를 위젯용으로 별도 저장'),
-              _widgetPlanRow('3', 'Android 위젯 레이아웃 제작', '1x1 / 2x1 크기부터 안전하게 시작'),
-              _widgetPlanRow('4', '일정 저장·삭제 시 위젯 갱신', '앱을 열지 않아도 최신 D-day 표시'),
+              _widgetPlanRow('1', '작은 위젯', '가장 가까운 D-day 1개를 크게 표시'),
+              _widgetPlanRow('2', '넓은 위젯', '가까운 D-day 2개를 한 번에 표시'),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(context),
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _requestPinHomeWidget(wide: false);
+                  },
+                  icon: const Icon(Icons.crop_square_rounded),
+                  label: const Text('작은 위젯 추가', style: TextStyle(fontWeight: FontWeight.w700)),
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF2F80ED),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text('확인', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _requestPinHomeWidget(wide: true);
+                  },
+                  icon: const Icon(Icons.view_agenda_outlined),
+                  label: const Text('넓은 위젯 추가', style: TextStyle(fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
               ),
             ],
@@ -1395,7 +1546,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           SnackBar(content: Text(ok ? '5초 뒤 예약 테스트를 걸었습니다.' : '예약 테스트 등록에 실패했습니다. 알림/정확한 알람 권한을 확인해주세요.')),
                         );
                       }),
-                      compactTile(Icons.widgets_outlined, '홈화면 위젯 설계 보기', () {
+                      compactTile(Icons.widgets_outlined, '홈 위젯 추가하기', () {
                         Navigator.pop(sheetContext);
                         _showWidgetPlanSheet();
                       }),
@@ -1833,7 +1984,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (notices.length == 1) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
-        child: SizedBox(height: 86, child: notices.first),
+        child: SizedBox(height: 104, child: notices.first),
       );
     }
 
@@ -1842,9 +1993,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: SizedBox(height: 86, child: notices[0])),
+          Expanded(child: SizedBox(height: 104, child: notices[0])),
           const SizedBox(width: 12),
-          Expanded(child: SizedBox(height: 86, child: notices[1])),
+          Expanded(child: SizedBox(height: 104, child: notices[1])),
         ],
       ),
     );
@@ -1861,7 +2012,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 9),
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 8),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(16),
@@ -1875,10 +2026,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             top: 0,
             left: 0,
             child: Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(color: iconBackgroundColor, borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, color: iconColor, size: 17),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(color: iconBackgroundColor, borderRadius: BorderRadius.circular(9)),
+              child: Icon(icon, color: iconColor, size: 16),
             ),
           ),
           Positioned(
@@ -1895,24 +2046,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           ),
           Positioned.fill(
-            top: 34,
-            right: 2,
+            top: 33,
+            right: 0,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12.6, height: 1.05, fontWeight: FontWeight.w700, color: Color(0xFF111827)),
+                  maxLines: 2,
+                  softWrap: true,
+                  style: const TextStyle(fontSize: 12.4, height: 1.16, fontWeight: FontWeight.w800, color: Color(0xFF111827)),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Text(
                   subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10.5, height: 1.16, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
+                  maxLines: 3,
+                  softWrap: true,
+                  style: const TextStyle(fontSize: 10.2, height: 1.22, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                 ),
               ],
             ),
@@ -1983,9 +2134,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 18,
-          mainAxisSpacing: isLandscape ? 14 : 18,
+          mainAxisSpacing: isLandscape ? 14 : 14,
           mainAxisExtent: isLandscape ? 132 : null,
-          childAspectRatio: isLandscape ? 2.35 : 0.66,
+          childAspectRatio: isLandscape ? 2.35 : 0.82,
         ),
       ),
     );
@@ -2003,8 +2154,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final radius = isLandscape ? 14.0 : 18.0;
     final cardPadding = isLandscape
         ? const EdgeInsets.fromLTRB(12, 8, 10, 8)
-        : const EdgeInsets.fromLTRB(14, 13, 12, 12);
-    final ddaySize = isLandscape ? 27.0 : 32.0;
+        : const EdgeInsets.fromLTRB(14, 11, 12, 8);
+    final ddaySize = isLandscape ? 27.0 : 30.0;
     final titleSize = isLandscape ? 12.8 : 13.2;
     final subtitleSize = isLandscape ? 10.3 : 11.2;
 
@@ -2105,7 +2256,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         ),
                       ],
                     ),
-                    SizedBox(height: isLandscape ? 7 : 14),
+                    SizedBox(height: isLandscape ? 7 : 8),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
@@ -2132,7 +2283,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         letterSpacing: -0.25,
                       ),
                     ),
-                    SizedBox(height: isLandscape ? 5 : 10),
+                    SizedBox(height: isLandscape ? 5 : 5),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(99),
                       child: LinearProgressIndicator(
@@ -2143,10 +2294,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                     ),
                     if (!isLandscape) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 5),
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.065),
                           borderRadius: BorderRadius.circular(10),
