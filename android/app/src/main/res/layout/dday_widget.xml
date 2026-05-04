@@ -11,41 +11,38 @@
     android:paddingBottom="8dp"
     android:background="@drawable/dday_widget_background">
 
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="50dp">
-
-        <ImageView
-            android:layout_width="47dp"
-            android:layout_height="47dp"
-            android:layout_gravity="center"
-            android:alpha="0.10"
-            android:src="@drawable/ic_widget_calendar_faint" />
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/dday_chip_background"
+        android:paddingLeft="14dp"
+        android:paddingRight="14dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
 
         <TextView
             android:id="@+id/widget_dday"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:includeFontPadding="false"
             android:maxLines="1"
             android:ellipsize="end"
             android:text="D-3"
             android:textColor="#7A3E91"
-            android:textSize="36sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
-    </FrameLayout>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/widget_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="8dp"
         android:ellipsize="end"
         android:gravity="center"
         android:includeFontPadding="false"
         android:maxLines="1"
-        android:text="결혼기념일"
+        android:text="위젯 테스트"
         android:textColor="#111827"
         android:textSize="15sp"
         android:textStyle="bold" />
@@ -55,7 +52,7 @@
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="5dp"
-        android:layout_marginTop="7dp"
+        android:layout_marginTop="8dp"
         android:max="100"
         android:progress="70"
         android:progressDrawable="@drawable/dday_widget_progress" />
@@ -78,7 +75,7 @@
         android:id="@+id/widget_message"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="5dp"
+        android:layout_marginTop="4dp"
         android:ellipsize="end"
         android:gravity="center"
         android:includeFontPadding="false"
@@ -86,5 +83,4 @@
         android:text="조금만 더 기다려요 💜"
         android:textColor="#9A7BA8"
         android:textSize="11.5sp" />
-
 </LinearLayout>

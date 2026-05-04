@@ -20,6 +20,7 @@ const String _splashSeenPrefsKey = 'tickday_splash_seen';
 const String _globalReminderEnabledKey = 'tickday_global_reminder_enabled';
 const String _defaultAlarmMinutesKey = 'tickday_default_alarm_minutes';
 const String _todaySummaryEnabledKey = 'tickday_today_summary_enabled';
+const String _widgetPinnedItemIdKey = 'tickday_widget_pinned_item_id';
 const int _todaySummaryNotificationId = 999101;
 const int _todaySummaryScheduleDays = 7;
 final ValueNotifier<Locale?> appLocaleNotifier = ValueNotifier<Locale?>(null);
@@ -87,7 +88,7 @@ class L {
   String get list => pick(ko: '목록', en: 'List', ja: 'リスト', vi: 'Danh sách');
   String get card => pick(ko: '카드', en: 'Cards', ja: 'カード', vi: 'Thẻ');
   String get firstEventTitle => pick(ko: '첫 일정을 등록해보세요', en: 'Create your first event', ja: '最初の予定を登録しましょう', vi: 'Tạo sự kiện đầu tiên');
-  String get firstEventSubtitle => pick(ko: '생일, 결혼기념일, 여행까지 한눈에 관리하세요.', en: 'Track birthdays, anniversaries, trips and more.', ja: '誕生日や記念日、旅行まで一目で管理。', vi: 'Theo dõi sinh nhật, kỷ niệm, chuyến đi và hơn thế nữa.');
+  String get firstEventSubtitle => pick(ko: '생일, 기념일, 여행까지 한눈에 관리하세요.', en: 'Track birthdays, anniversaries, trips and more.', ja: '誕生日や記念日、旅行まで一目で管理。', vi: 'Theo dõi sinh nhật, kỷ niệm, chuyến đi và hơn thế nữa.');
   String get widgetNoticeTitle => pick(ko: '위젯 준비 중', en: 'Widget coming soon', ja: 'ウィジェット準備中', vi: 'Sắp có widget');
   String get widgetNoticeSubtitle => pick(ko: '홈 화면에서 바로 보는 D-day 위젯을 준비하고 있어요.', en: 'A home screen D-day widget is being prepared.', ja: 'ホーム画面で見られるD-dayウィジェットを準備中です。', vi: 'Widget D-day trên màn hình chính đang được chuẩn bị.');
   String get emptyTitle => pick(ko: '아직 등록된 일정이 없어요', en: 'No events yet', ja: 'まだ予定がありません', vi: 'Chưa có sự kiện');
@@ -1173,6 +1174,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _globalReminderEnabled = true;
   bool _todaySummaryEnabled = false;
   int _defaultAlarmMinutesBefore = 1440;
+  String? _widgetPinnedItemId;
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Timer? _clockTimer;
@@ -1401,6 +1403,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _globalReminderEnabled = prefs.getBool(_globalReminderEnabledKey) ?? true;
       _todaySummaryEnabled = prefs.getBool(_todaySummaryEnabledKey) ?? false;
       _defaultAlarmMinutesBefore = prefs.getInt(_defaultAlarmMinutesKey) ?? 1440;
+      _widgetPinnedItemId = prefs.getString(_widgetPinnedItemIdKey);
     });
 
     _openPendingNotificationItem();
@@ -1425,8 +1428,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   List<DdayItem> _nearestWidgetItems(int count) {
     if (_items.isEmpty) return <DdayItem>[];
+
     final upcoming = List<DdayItem>.from(_items)
       ..sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
+
+    // 위젯은 사용자가 마지막으로 저장/수정한 일정을 우선 표시합니다.
+    // 이전에는 가장 가까운 일정만 자동 선택해서, 예전 일정(예: 결혼기념일)이 계속 보이는 것처럼 느껴질 수 있었습니다.
+    final pinnedId = _widgetPinnedItemId;
+    if (pinnedId != null && pinnedId.isNotEmpty) {
+      final pinnedIndex = upcoming.indexWhere((item) => item.id == pinnedId);
+      if (pinnedIndex >= 0) {
+        final pinned = upcoming.removeAt(pinnedIndex);
+        upcoming.insert(0, pinned);
+      }
+    }
+
     return upcoming.take(count).toList();
   }
 
@@ -1539,8 +1555,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       } else {
         _items.add(item);
       }
+      _widgetPinnedItemId = item.id;
       _sortItems();
     });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_widgetPinnedItemIdKey, item.id);
+
     await _saveItems();
     await _updateHomeWidget();
     await _scheduleNotifications(item);
@@ -1718,7 +1739,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _deleteItem(DdayItem item) async {
     await NotificationService.cancel(NotificationService.idFromString(item.id));
-    setState(() => _items.removeWhere((e) => e.id == item.id));
+    setState(() {
+      _items.removeWhere((e) => e.id == item.id);
+      if (_widgetPinnedItemId == item.id) {
+        _widgetPinnedItemId = _items.isEmpty ? null : _items.first.id;
+      }
+      _sortItems();
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    if (_widgetPinnedItemId == null || _widgetPinnedItemId!.isEmpty) {
+      await prefs.remove(_widgetPinnedItemIdKey);
+    } else {
+      await prefs.setString(_widgetPinnedItemIdKey, _widgetPinnedItemId!);
+    }
+
     await _saveItems();
     await _updateHomeWidget();
     await _scheduleTodaySummaryNotification();
