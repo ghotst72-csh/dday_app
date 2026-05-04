@@ -88,6 +88,12 @@ class DdayWidgetProviderWide : HomeWidgetProvider() {
         views.setTextViewText(remainViewId, remain)
         views.setTextViewText(messageViewId, message)
         views.setProgressBar(progressViewId, 100, progress, false)
+
+        // ✅ 색상 적용
+        val color = widgetData.getInt("${prefix}color", 0xFF111827.toInt())
+        views.setTextColor(ddayViewId, color)
+        views.setTextColor(titleViewId, color)
+        views.setTextColor(remainViewId, color)
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
