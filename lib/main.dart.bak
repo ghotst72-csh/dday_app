@@ -4547,14 +4547,7 @@ class _TrashPageState extends State<TrashPage> {
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(l.pick(ko: '휴지통을 비울까요?', en: 'Empty trash?', ja: 'ゴミ箱を空にしますか？', vi: 'Dọn thùng rác?')),
-        content: Text(
-	  l.pick(
-	    ko: '휴지통에 있는 모든 일정이 영구 삭제됩니다.',
-	    en: 'All events in the trash will be permanently deleted.',
-	    ja: 'ゴミ箱内のすべての予定が完全に削除されます。',
-	    vi: 'Tất cả sự kiện trong thùng rác sẽ bị xóa vĩnh viễn.',
-	  ),
-	),
+        content: Text(l.pick(ko: '모든 삭제된 일정이 완전히 삭제됩니다.', en: 'All deleted events will be removed forever.', ja: '削除された予定がすべて完全に削除されます。', vi: 'Tất cả sự kiện đã xóa sẽ bị xóa vĩnh viễn.')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l.cancel)),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(l.pick(ko: '비우기', en: 'Empty', ja: '空にする', vi: 'Dọn'))),
