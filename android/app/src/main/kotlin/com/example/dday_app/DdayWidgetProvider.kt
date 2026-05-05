@@ -10,6 +10,7 @@ import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetProvider
 import java.util.Calendar
 import java.util.Locale
+import java.text.SimpleDateFormat
 import java.util.concurrent.TimeUnit
 
 class DdayWidgetProvider : HomeWidgetProvider() {
@@ -47,10 +48,11 @@ class DdayWidgetProvider : HomeWidgetProvider() {
 
             val views = RemoteViews(context.packageName, R.layout.dday_widget)
             views.setTextViewText(R.id.widget_dday, dday)
-            views.setTextViewText(R.id.widget_title, title)
+            views.setTextViewText(R.id.widget_title, widgetTitleText(title, 14))
             views.setTextViewText(R.id.widget_remain, remain)
             views.setTextViewText(R.id.widget_message, message)
             views.setProgressBar(R.id.widget_progress, 100, progress, false)
+            views.setTextViewText(R.id.widget_updated_at, updatedText(lang))
 
             // ✅ 위젯 색상 안전 적용: HomeWidget 캐시 타입이 Int/Long으로 섞여도 크래시 방지
             val color = widgetData.getIntCompat("widget_color", 0xFF111827.toInt())
@@ -74,6 +76,13 @@ class DdayWidgetProvider : HomeWidgetProvider() {
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
+    }
+
+
+    private fun widgetTitleText(title: String, maxLength: Int): String {
+        val clean = title.replace(Regex("\\s+"), " ").trim()
+        if (clean.length <= maxLength) return clean
+        return clean.take(maxLength).trimEnd() + "…"
     }
 
     private fun effectiveTargetMillis(targetMillis: Long, repeatType: String, month: Int, day: Int, hour: Int, minute: Int): Long {
@@ -142,47 +151,353 @@ class DdayWidgetProvider : HomeWidgetProvider() {
             lower.contains("시험") || lower.contains("test") || lower.contains("exam") || lower.contains("試験") || lower.contains("thi") -> "exam"
             else -> "default"
         }
+
+        val dayMood = when {
+            days == 0 -> "today"
+            days <= 2 -> "soon"
+            days <= 7 -> "week"
+            days <= 30 -> "month"
+            else -> "later"
+        }
+
+        val categoryMessages = categoryMessages(category, lang)
+        val moodMessages = moodMessages(dayMood, lang)
+        val messages = categoryMessages + moodMessages
+        return messages.random()
+    }
+
+    private fun categoryMessages(category: String, lang: String): List<String> {
         return when (lang) {
-            "en" -> when {
-                days == 0 -> "Today is the day ✨"
-                category == "birthday" -> "A celebration is coming 🎂"
-                category == "travel" -> "Get ready to go ✈️"
-                category == "anniversary" -> "A special day is near 💜"
-                category == "exam" -> "You’ve got this 📚"
-                days <= 2 -> "Almost there 💜"
-                days <= 7 -> "Getting closer ✨"
-                else -> "Plenty of time 🌿"
+            "en" -> when (category) {
+                "birthday" -> listOf(
+                    "A celebration is coming 🎂",
+                    "Birthday smiles are getting closer ✨",
+                    "A warm wish is waiting 💜",
+                    "The candles are almost ready 🎉",
+                    "Someone special deserves joy today",
+                    "A happy memory is on its way",
+                    "Prepare a little surprise 🎁",
+                    "A sweet birthday moment is near",
+                    "Soon, the room will feel brighter 🌟",
+                    "A day full of smiles is coming",
+                    "Make space for warm wishes 🎂",
+                    "The birthday mood is starting 💜"
+                )
+                "travel" -> listOf(
+                    "Your trip is getting closer ✈️",
+                    "A new view is waiting for you 🌊",
+                    "Pack a little excitement today 🧳",
+                    "Adventure is just ahead ✨",
+                    "The road is calling softly 🌿",
+                    "Soon, your routine will become a memory",
+                    "A fresh breeze is coming your way",
+                    "Get ready for a beautiful escape",
+                    "Your next scene is almost here 📸",
+                    "The map is quietly opening",
+                    "A lighter heart is waiting there",
+                    "Travel days always arrive faster than expected"
+                )
+                "anniversary" -> listOf(
+                    "A special day is near 💜",
+                    "A precious memory is coming back ✨",
+                    "Another meaningful moment awaits",
+                    "Your warm anniversary is on its way 🌷",
+                    "Soon, you will remember why it mattered",
+                    "A quiet memory is glowing again",
+                    "A day worth keeping is getting closer",
+                    "That beautiful feeling is returning",
+                    "A heartwarming date is almost here",
+                    "Some days deserve to be remembered",
+                    "The story continues beautifully 💜",
+                    "A little nostalgia is already near"
+                )
+                "exam" -> listOf(
+                    "You have got this 📚",
+                    "Just a little more focus 💪",
+                    "Your effort is adding up ✨",
+                    "Keep going, you are almost there 🔥",
+                    "One steady step at a time 🌿",
+                    "Believe in what you prepared",
+                    "Calm focus will carry you through",
+                    "Every small review still counts",
+                    "Your future self will thank you",
+                    "Breathe, then try one more page",
+                    "You are stronger than the pressure",
+                    "Let your practice become confidence"
+                )
+                else -> listOf(
+                    "One step closer today 💜",
+                    "The wait is getting shorter ✨",
+                    "Something meaningful is on the way",
+                    "Today moved you a little closer 🙂",
+                    "Take it slow and steady 🌿",
+                    "The day is waiting quietly",
+                    "Small days become special memories",
+                    "Your moment is coming at its own pace",
+                    "Keep this day gently in mind",
+                    "Time is quietly doing its work",
+                    "A little excitement is building",
+                    "Not far to go now"
+                )
             }
-            "ja" -> when {
-                days == 0 -> "今日がその日です✨"
-                category == "birthday" -> "お祝いの日が近いです🎂"
-                category == "travel" -> "出発準備をしましょう✈️"
-                category == "anniversary" -> "大切な日が近いです💜"
-                category == "exam" -> "もう少し頑張って📚"
-                days <= 2 -> "もうすぐです💜"
-                days <= 7 -> "少しずつ近づいています✨"
-                else -> "ゆっくり準備しましょう🌿"
+            "ja" -> when (category) {
+                "birthday" -> listOf(
+                    "お祝いの日が近いです🎂",
+                    "笑顔の日が近づいています✨",
+                    "あたたかい願いが待っています💜",
+                    "キャンドルの準備はもうすぐ🎉",
+                    "大切な人に喜びを届ける日です",
+                    "幸せな思い出が近づいています",
+                    "小さなサプライズを準備しましょう🎁",
+                    "やさしい誕生日の瞬間が近いです",
+                    "部屋が明るくなる日が来ます🌟",
+                    "笑顔いっぱいの日が近いです",
+                    "あたたかい言葉を用意しましょう🎂",
+                    "誕生日の気分が始まっています💜"
+                )
+                "travel" -> listOf(
+                    "旅の日が近づいています✈️",
+                    "新しい景色が待っています🌊",
+                    "少しずつ楽しみを詰めましょう🧳",
+                    "冒険はもうすぐそこです✨",
+                    "道がそっと呼んでいます🌿",
+                    "日常が思い出に変わる日が来ます",
+                    "新しい風が近づいています",
+                    "素敵な逃避行の準備をしましょう",
+                    "次の景色はもうすぐです📸",
+                    "地図が静かに開いています",
+                    "軽い心が待っています",
+                    "旅の日は思ったより早く来ます"
+                )
+                "anniversary" -> listOf(
+                    "大切な日が近いです💜",
+                    "思い出の日が戻ってきます✨",
+                    "また意味のある瞬間が待っています",
+                    "あたたかい記念日が近づいています🌷",
+                    "なぜ大切だったのか思い出す日です",
+                    "静かな思い出がまた光っています",
+                    "残しておきたい日が近いです",
+                    "あの美しい気持ちが戻ってきます",
+                    "心あたたまる日がもうすぐです",
+                    "覚えておきたい日があります",
+                    "物語はきれいに続いています💜",
+                    "少し懐かしい気持ちが近づいています"
+                )
+                "exam" -> listOf(
+                    "きっと大丈夫です📚",
+                    "あと少し集中しましょう💪",
+                    "努力はちゃんと積み重なっています✨",
+                    "ここまで来たなら大丈夫🔥",
+                    "一歩ずつ落ち着いて進みましょう🌿",
+                    "準備した自分を信じて",
+                    "落ち着いた集中が力になります",
+                    "小さな復習もまだ力になります",
+                    "未来の自分が感謝します",
+                    "深呼吸してもう一ページ",
+                    "プレッシャーよりあなたは強いです",
+                    "練習を自信に変えましょう"
+                )
+                else -> listOf(
+                    "今日も一歩近づきました💜",
+                    "待つ時間が少し短くなりました✨",
+                    "意味のある日が近づいています",
+                    "今日も少し前に進みました🙂",
+                    "ゆっくり着実に準備しましょう🌿",
+                    "その日は静かに待っています",
+                    "小さな日々が特別な思い出になります",
+                    "あなたの瞬間は自然な速さで来ます",
+                    "この日をそっと覚えておきましょう",
+                    "時間が静かに進んでいます",
+                    "少しずつ楽しみが増えています",
+                    "もうそんなに遠くありません"
+                )
             }
-            "vi" -> when {
-                days == 0 -> "Hôm nay là ngày đó ✨"
-                category == "birthday" -> "Sắp đến ngày chúc mừng 🎂"
-                category == "travel" -> "Chuẩn bị lên đường ✈️"
-                category == "anniversary" -> "Ngày đặc biệt đang đến 💜"
-                category == "exam" -> "Cố lên nhé 📚"
-                days <= 2 -> "Sắp đến rồi 💜"
-                days <= 7 -> "Đang gần hơn rồi ✨"
-                else -> "Còn thời gian chuẩn bị 🌿"
+            "vi" -> when (category) {
+                "birthday" -> listOf(
+                    "Ngày chúc mừng đang đến 🎂",
+                    "Nụ cười sinh nhật đang gần hơn ✨",
+                    "Một lời chúc ấm áp đang chờ 💜",
+                    "Những ngọn nến gần sẵn sàng rồi 🎉",
+                    "Một người đặc biệt xứng đáng được vui",
+                    "Một kỷ niệm hạnh phúc đang đến",
+                    "Chuẩn bị một bất ngờ nhỏ nhé 🎁",
+                    "Khoảnh khắc sinh nhật ngọt ngào sắp đến",
+                    "Căn phòng sẽ sớm sáng hơn 🌟",
+                    "Một ngày đầy nụ cười đang tới",
+                    "Hãy chuẩn bị những lời chúc ấm áp 🎂",
+                    "Không khí sinh nhật bắt đầu rồi 💜"
+                )
+                "travel" -> listOf(
+                    "Chuyến đi đang gần hơn ✈️",
+                    "Một khung cảnh mới đang chờ bạn 🌊",
+                    "Hôm nay hãy gói thêm chút háo hức 🧳",
+                    "Cuộc phiêu lưu ở ngay phía trước ✨",
+                    "Con đường đang khẽ gọi 🌿",
+                    "Sắp tới, thói quen sẽ thành kỷ niệm",
+                    "Một làn gió mới đang đến",
+                    "Chuẩn bị cho một chuyến trốn thật đẹp",
+                    "Khung cảnh tiếp theo sắp hiện ra 📸",
+                    "Tấm bản đồ đang lặng lẽ mở ra",
+                    "Một trái tim nhẹ hơn đang chờ ở đó",
+                    "Ngày đi luôn đến nhanh hơn ta nghĩ"
+                )
+                "anniversary" -> listOf(
+                    "Ngày đặc biệt đang đến 💜",
+                    "Một kỷ niệm quý giá đang trở lại ✨",
+                    "Một khoảnh khắc ý nghĩa khác đang chờ",
+                    "Ngày kỷ niệm ấm áp đang gần hơn 🌷",
+                    "Bạn sẽ sớm nhớ vì sao nó quan trọng",
+                    "Một kỷ niệm dịu dàng lại sáng lên",
+                    "Một ngày đáng giữ gìn đang đến",
+                    "Cảm giác đẹp ấy đang quay lại",
+                    "Một ngày ấm lòng sắp tới",
+                    "Có những ngày rất đáng được nhớ",
+                    "Câu chuyện vẫn tiếp tục thật đẹp 💜",
+                    "Một chút hoài niệm đã ở rất gần"
+                )
+                "exam" -> listOf(
+                    "Bạn làm được mà 📚",
+                    "Tập trung thêm một chút nữa thôi 💪",
+                    "Nỗ lực của bạn đang tích lũy ✨",
+                    "Tiếp tục nhé, bạn gần tới rồi 🔥",
+                    "Từng bước vững vàng thôi 🌿",
+                    "Hãy tin vào điều bạn đã chuẩn bị",
+                    "Sự bình tĩnh sẽ đưa bạn đi qua",
+                    "Mỗi lần ôn nhỏ vẫn có giá trị",
+                    "Bạn của tương lai sẽ cảm ơn bạn",
+                    "Hít thở rồi thêm một trang nữa",
+                    "Bạn mạnh hơn áp lực này",
+                    "Biến luyện tập thành tự tin nhé"
+                )
+                else -> listOf(
+                    "Hôm nay lại gần hơn một bước 💜",
+                    "Thời gian chờ đang ngắn lại ✨",
+                    "Một điều ý nghĩa đang trên đường tới",
+                    "Hôm nay đã đưa bạn gần hơn một chút 🙂",
+                    "Cứ chậm rãi và vững vàng 🌿",
+                    "Ngày ấy đang lặng lẽ chờ bạn",
+                    "Những ngày nhỏ sẽ thành kỷ niệm đẹp",
+                    "Khoảnh khắc của bạn sẽ đến đúng nhịp",
+                    "Hãy nhẹ nhàng giữ ngày này trong lòng",
+                    "Thời gian đang âm thầm làm việc",
+                    "Một chút háo hức đang lớn dần",
+                    "Không còn xa nữa đâu"
+                )
             }
-            else -> when {
-                days == 0 -> "오늘이 바로 그날이에요 ✨"
-                category == "birthday" -> "축하할 날이 다가와요 🎂"
-                category == "travel" -> "떠날 준비, 거의 다 왔어요 ✈️"
-                category == "anniversary" -> "소중한 날이 가까워져요 💜"
-                category == "exam" -> "조금만 더 힘내요 📚"
-                days <= 2 -> "조금만 더 기다려요 💜"
-                days <= 7 -> "조금씩 가까워지고 있어요 ✨"
-                else -> "천천히 준비해요 🌿"
+            else -> when (category) {
+                "birthday" -> listOf(
+                    "축하할 날이 다가와요 🎂",
+                    "생일의 웃음이 가까워져요 ✨",
+                    "따뜻한 축하가 기다리고 있어요 💜",
+                    "촛불 켤 시간이 가까워졌어요 🎉",
+                    "소중한 사람에게 기쁨을 전할 날이에요",
+                    "행복한 추억이 하나 더 생길 거예요",
+                    "작은 서프라이즈를 준비해볼까요 🎁",
+                    "달콤한 생일 순간이 다가와요",
+                    "곧 방 안이 환해질 거예요 🌟",
+                    "웃음 가득한 하루가 오고 있어요",
+                    "따뜻한 한마디를 준비해요 🎂",
+                    "생일 분위기가 벌써 시작됐어요 💜"
+                )
+                "travel" -> listOf(
+                    "여행이 가까워지고 있어요 ✈️",
+                    "새로운 풍경이 기다리고 있어요 🌊",
+                    "오늘은 설렘을 조금 챙겨요 🧳",
+                    "모험은 바로 앞에 있어요 ✨",
+                    "길이 조용히 부르고 있어요 🌿",
+                    "곧 일상이 추억으로 바뀔 거예요",
+                    "새로운 바람이 다가오고 있어요",
+                    "예쁜 탈출을 준비해볼까요",
+                    "다음 장면이 곧 펼쳐져요 📸",
+                    "지도가 조용히 열리고 있어요",
+                    "가벼운 마음이 그곳에서 기다려요",
+                    "여행 날짜는 늘 생각보다 빨리 와요"
+                )
+                "anniversary" -> listOf(
+                    "소중한 날이 가까워져요 💜",
+                    "귀한 기억이 다시 돌아오고 있어요 ✨",
+                    "또 하나의 의미 있는 순간이 기다려요",
+                    "따뜻한 기념일이 다가와요 🌷",
+                    "왜 소중했는지 다시 떠올릴 날이에요",
+                    "조용한 추억이 다시 빛나고 있어요",
+                    "간직하고 싶은 하루가 가까워져요",
+                    "그때의 예쁜 마음이 돌아오고 있어요",
+                    "마음 따뜻한 날짜가 곧 와요",
+                    "기억할 만한 날은 따로 있죠",
+                    "이야기는 예쁘게 이어지고 있어요 💜",
+                    "살짝 그리운 마음이 가까이 왔어요"
+                )
+                "exam" -> listOf(
+                    "조금만 더 힘내요 📚",
+                    "집중할 시간, 조금만 더요 💪",
+                    "노력은 분명히 쌓이고 있어요 ✨",
+                    "여기까지 왔으면 충분히 잘하고 있어요 🔥",
+                    "한 걸음씩 차분하게 가요 🌿",
+                    "준비한 자신을 믿어도 돼요",
+                    "차분한 집중이 힘이 될 거예요",
+                    "작은 복습도 아직 큰 도움이 돼요",
+                    "미래의 내가 고마워할 거예요",
+                    "숨 한 번 쉬고 한 페이지 더요",
+                    "압박감보다 당신이 더 강해요",
+                    "연습이 자신감이 되는 중이에요"
+                )
+                else -> listOf(
+                    "오늘도 한 걸음 가까워졌어요 💜",
+                    "기다림이 조금 짧아졌어요 ✨",
+                    "의미 있는 날이 오고 있어요",
+                    "오늘도 조금 더 가까워졌어요 🙂",
+                    "천천히, 그래도 꾸준히 준비해요 🌿",
+                    "그날은 조용히 기다리고 있어요",
+                    "작은 하루들이 특별한 기억이 돼요",
+                    "당신의 순간은 자기 속도로 오고 있어요",
+                    "이 날을 마음속에 살짝 담아둬요",
+                    "시간이 조용히 일을 하고 있어요",
+                    "설렘이 조금씩 쌓이고 있어요",
+                    "이제 그렇게 멀지 않아요"
+                )
             }
+        }
+    }
+
+    private fun moodMessages(dayMood: String, lang: String): List<String> {
+        return when (lang) {
+            "en" -> when (dayMood) {
+                "today" -> listOf("Today is the day ✨", "The moment has arrived 💜", "Make today special 🌟", "It is finally here 🙂", "Let today be remembered 🎉", "This is the moment you saved")
+                "soon" -> listOf("Almost there 💜", "Just a little longer ✨", "The moment is very close 🙂", "One more breath, almost there 🌿", "It is right around the corner", "The final wait has begun")
+                "week" -> listOf("Getting closer every day ✨", "This week carries the excitement 💜", "The wait is getting shorter", "A little thrill is building 🌟", "Keep your heart ready", "Soon will become today")
+                "month" -> listOf("There is time to prepare well 🌿", "Slowly getting closer", "The date is becoming real", "A calm kind of excitement is here", "Prepare at your own pace 🙂", "One month can pass quickly")
+                else -> listOf("Plenty of time 🌿", "Let it wait beautifully", "Your day is resting in the future", "No rush, just remember it gently", "One day closer, every day ✨", "Good things can take their time")
+            }
+            "ja" -> when (dayMood) {
+                "today" -> listOf("今日がその日です✨", "ついにこの瞬間です💜", "今日は特別に過ごしましょう🌟", "いよいよ来ました🙂", "今日を大切に残しましょう🎉", "待っていた瞬間です")
+                "soon" -> listOf("もうすぐです💜", "あと少しだけ待ちましょう✨", "その瞬間はすぐそこです🙂", "深呼吸して、あと少し🌿", "もう目の前です", "最後の待ち時間が始まりました")
+                "week" -> listOf("毎日少しずつ近づいています✨", "今週は少しわくわくします💜", "待つ時間が短くなっています", "楽しみがふくらんでいます🌟", "心の準備をしておきましょう", "もうすぐ今日になります")
+                "month" -> listOf("まだゆっくり準備できます🌿", "少しずつ近づいています", "日付がだんだん現実になっています", "静かな楽しみが始まっています", "自分のペースで準備しましょう🙂", "一か月は意外と早いです")
+                else -> listOf("まだ時間があります🌿", "きれいに待っていましょう", "その日は未来で休んでいます", "急がずそっと覚えておきましょう", "毎日一歩ずつ近づいています✨", "良いことには時間がかかります")
+            }
+            "vi" -> when (dayMood) {
+                "today" -> listOf("Hôm nay là ngày đó ✨", "Khoảnh khắc đã đến rồi 💜", "Hãy làm hôm nay thật đặc biệt 🌟", "Cuối cùng cũng tới rồi 🙂", "Hãy để hôm nay thành kỷ niệm 🎉", "Đây là khoảnh khắc bạn đã giữ")
+                "soon" -> listOf("Sắp đến rồi 💜", "Chờ thêm một chút nữa thôi ✨", "Khoảnh khắc ấy rất gần rồi 🙂", "Hít thở, gần tới rồi 🌿", "Nó ở ngay gần đây", "Khoảng chờ cuối đã bắt đầu")
+                "week" -> listOf("Mỗi ngày lại gần hơn ✨", "Tuần này có chút háo hức 💜", "Thời gian chờ đang ngắn lại", "Niềm vui nhỏ đang lớn dần 🌟", "Hãy chuẩn bị trái tim nhé", "Sắp tới sẽ thành hôm nay")
+                "month" -> listOf("Vẫn còn thời gian chuẩn bị thật tốt 🌿", "Đang gần hơn từng chút", "Ngày ấy đang trở nên thật hơn", "Một cảm giác háo hức nhẹ nhàng đã đến", "Chuẩn bị theo nhịp của bạn 🙂", "Một tháng có thể trôi rất nhanh")
+                else -> listOf("Còn nhiều thời gian 🌿", "Hãy để nó chờ thật đẹp", "Ngày ấy đang nằm yên trong tương lai", "Không vội, chỉ cần nhớ nhẹ thôi", "Mỗi ngày lại gần hơn một chút ✨", "Điều tốt đẹp có thể cần thời gian")
+            }
+            else -> when (dayMood) {
+                "today" -> listOf("오늘이 바로 그날이에요 ✨", "드디어 이 순간이 왔어요 💜", "오늘을 특별하게 남겨요 🌟", "드디어 기다리던 날이에요 🙂", "오늘은 기억에 남을 거예요 🎉", "아껴둔 순간이 열렸어요")
+                "soon" -> listOf("거의 다 왔어요 💜", "조금만 더 기다리면 돼요 ✨", "그 순간이 아주 가까워요 🙂", "숨 한 번 쉬면 거의 도착이에요 🌿", "이제 바로 코앞이에요", "마지막 기다림이 시작됐어요")
+                "week" -> listOf("매일 조금씩 가까워져요 ✨", "이번 주는 괜히 설레요 💜", "기다림이 점점 짧아져요", "작은 설렘이 커지고 있어요 🌟", "마음의 준비를 해둬요", "곧 오늘이 될 거예요")
+                "month" -> listOf("아직 예쁘게 준비할 시간이 있어요 🌿", "천천히 가까워지고 있어요", "그 날짜가 점점 현실이 돼요", "잔잔한 설렘이 시작됐어요", "내 속도로 준비해도 괜찮아요 🙂", "한 달은 생각보다 빨리 지나가요")
+                else -> listOf("아직 여유가 있어요 🌿", "예쁘게 기다려도 좋아요", "그날은 미래에서 쉬고 있어요", "서두르지 말고 살짝 기억해요", "매일 하루씩 가까워지고 있어요 ✨", "좋은 일은 천천히 와도 좋아요")
+            }
+        }
+    }
+    private fun updatedText(lang: String): String {
+        val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(System.currentTimeMillis())
+        return when (lang) {
+            "en" -> "Updated · $time"
+            "ja" -> "更新 · $time"
+            "vi" -> "Đã cập nhật · $time"
+            else -> "갱신됨 · $time"
         }
     }
 

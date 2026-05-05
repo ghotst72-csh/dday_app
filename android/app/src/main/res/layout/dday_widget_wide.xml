@@ -5,38 +5,41 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center_vertical"
-    android:paddingLeft="11dp"
-    android:paddingTop="8dp"
-    android:paddingRight="11dp"
+    android:paddingLeft="13dp"
+    android:paddingTop="10dp"
+    android:paddingRight="13dp"
     android:paddingBottom="8dp"
     android:background="@drawable/dday_widget_background">
 
     <LinearLayout
         android:id="@+id/widget_wide_row_1"
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="66dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="72dp"
             android:layout_height="wrap_content"
+            android:gravity="center"
             android:background="@drawable/dday_chip_background"
-            android:paddingLeft="10dp"
-            android:paddingRight="10dp"
+            android:paddingLeft="7dp"
+            android:paddingRight="7dp"
             android:paddingTop="5dp"
             android:paddingBottom="5dp">
 
             <TextView
                 android:id="@+id/widget_wide_dday_1"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:includeFontPadding="false"
+                android:gravity="center"
+                android:includeFontPadding="true"
                 android:maxLines="1"
+                android:singleLine="true"
                 android:ellipsize="end"
                 android:text="D-1"
-                android:textColor="#7A3E91"
-                android:textSize="18sp"
+                android:textColor="#22C55E"
+                android:textSize="17.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -46,26 +49,27 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:orientation="vertical"
-            android:paddingLeft="10dp">
+            android:paddingLeft="13dp">
 
             <TextView
                 android:id="@+id/widget_wide_title_1"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:includeFontPadding="false"
+                android:includeFontPadding="true"
                 android:maxLines="1"
+                android:singleLine="true"
                 android:text="위젯 테스트"
                 android:textColor="#111827"
-                android:textSize="15sp"
+                android:textSize="13.4sp"
                 android:textStyle="bold" />
 
             <ProgressBar
                 android:id="@+id/widget_wide_progress_1"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
-                android:layout_height="4dp"
-                android:layout_marginTop="6dp"
+                android:layout_height="6dp"
+                android:layout_marginTop="5dp"
                 android:max="100"
                 android:progress="70"
                 android:progressDrawable="@drawable/dday_widget_progress" />
@@ -76,11 +80,12 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:ellipsize="end"
-                android:includeFontPadding="false"
+                android:includeFontPadding="true"
                 android:maxLines="1"
-                android:text="오늘 · 9시간 남음"
+                android:singleLine="true"
+                android:text="내일 · 0시간 남음"
                 android:textColor="#6B7280"
-                android:textSize="11.5sp"
+                android:textSize="10.4sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -89,11 +94,12 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
-                android:includeFontPadding="false"
+                android:includeFontPadding="true"
                 android:maxLines="1"
+                android:singleLine="true"
                 android:text="조금만 더 기다려요 💜"
                 android:textColor="#9A7BA8"
-                android:textSize="10.5sp" />
+                android:textSize="9.6sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -103,36 +109,39 @@
         android:layout_height="1dp"
         android:layout_marginTop="5dp"
         android:layout_marginBottom="5dp"
-        android:alpha="0.26"
+        android:alpha="0.18"
         android:background="#AEB6C4"
         android:text="" />
 
     <LinearLayout
         android:id="@+id/widget_wide_row_2"
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="66dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="72dp"
             android:layout_height="wrap_content"
+            android:gravity="center"
             android:background="@drawable/dday_chip_background"
-            android:paddingLeft="10dp"
-            android:paddingRight="10dp"
+            android:paddingLeft="7dp"
+            android:paddingRight="7dp"
             android:paddingTop="5dp"
             android:paddingBottom="5dp">
 
             <TextView
                 android:id="@+id/widget_wide_dday_2"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:includeFontPadding="false"
+                android:gravity="center"
+                android:includeFontPadding="true"
                 android:maxLines="1"
+                android:singleLine="true"
                 android:ellipsize="end"
-                android:text="D-36"
-                android:textColor="#F59E0B"
-                android:textSize="18sp"
+                android:text="D-Day"
+                android:textColor="#22C55E"
+                android:textSize="17.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -142,26 +151,27 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:orientation="vertical"
-            android:paddingLeft="10dp">
+            android:paddingLeft="13dp">
 
             <TextView
                 android:id="@+id/widget_wide_title_2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:includeFontPadding="false"
+                android:includeFontPadding="true"
                 android:maxLines="1"
-                android:text="여행 출발"
+                android:singleLine="true"
+                android:text="두 번째 일정"
                 android:textColor="#111827"
-                android:textSize="15sp"
+                android:textSize="13.4sp"
                 android:textStyle="bold" />
 
             <ProgressBar
                 android:id="@+id/widget_wide_progress_2"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
-                android:layout_height="4dp"
-                android:layout_marginTop="6dp"
+                android:layout_height="6dp"
+                android:layout_marginTop="5dp"
                 android:max="100"
                 android:progress="20"
                 android:progressDrawable="@drawable/dday_widget_progress" />
@@ -172,11 +182,12 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:ellipsize="end"
-                android:includeFontPadding="false"
+                android:includeFontPadding="true"
                 android:maxLines="1"
-                android:text="7일 남음"
+                android:singleLine="true"
+                android:text="오늘 · 8시간 남음"
                 android:textColor="#6B7280"
-                android:textSize="11.5sp"
+                android:textSize="10.4sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -185,11 +196,27 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
-                android:includeFontPadding="false"
+                android:includeFontPadding="true"
                 android:maxLines="1"
-                android:text="천천히 준비해요 🌿"
+                android:singleLine="true"
+                android:text="오늘이 바로 그날이에요 ✨"
                 android:textColor="#9A7BA8"
-                android:textSize="10.5sp" />
+                android:textSize="9.6sp" />
         </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_wide_updated_at"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:gravity="right"
+        android:includeFontPadding="true"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:text="갱신됨 · 08:40"
+        android:textColor="#9CA3AF"
+        android:textSize="8sp" />
+
 </LinearLayout>

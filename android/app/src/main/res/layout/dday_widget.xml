@@ -6,30 +6,31 @@
     android:orientation="vertical"
     android:gravity="center"
     android:paddingLeft="9dp"
-    android:paddingTop="8dp"
+    android:paddingTop="7dp"
     android:paddingRight="9dp"
-    android:paddingBottom="8dp"
+    android:paddingBottom="7dp"
     android:background="@drawable/dday_widget_background">
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/dday_chip_background"
-        android:paddingLeft="14dp"
-        android:paddingRight="14dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp">
+        android:paddingLeft="13dp"
+        android:paddingRight="13dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp">
 
         <TextView
             android:id="@+id/widget_dday"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:includeFontPadding="false"
+            android:includeFontPadding="true"
             android:maxLines="1"
+            android:singleLine="true"
             android:ellipsize="end"
-            android:text="D-3"
-            android:textColor="#7A3E91"
-            android:textSize="22sp"
+            android:text="D-1"
+            android:textColor="#22C55E"
+            android:textSize="21sp"
             android:textStyle="bold" />
     </LinearLayout>
 
@@ -37,14 +38,15 @@
         android:id="@+id/widget_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="7dp"
         android:ellipsize="end"
         android:gravity="center"
-        android:includeFontPadding="false"
+        android:includeFontPadding="true"
         android:maxLines="1"
+        android:singleLine="true"
         android:text="위젯 테스트"
         android:textColor="#111827"
-        android:textSize="15sp"
+        android:textSize="14sp"
         android:textStyle="bold" />
 
     <ProgressBar
@@ -52,7 +54,7 @@
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="5dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:max="100"
         android:progress="70"
         android:progressDrawable="@drawable/dday_widget_progress" />
@@ -61,26 +63,43 @@
         android:id="@+id/widget_remain"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="5dp"
         android:ellipsize="end"
         android:gravity="center"
-        android:includeFontPadding="false"
+        android:includeFontPadding="true"
         android:maxLines="1"
-        android:text="오늘 · 2시간 남음"
+        android:singleLine="true"
+        android:text="내일 · 0시간 남음"
         android:textColor="#6B7280"
-        android:textSize="12.5sp"
+        android:textSize="11.5sp"
         android:textStyle="bold" />
 
     <TextView
         android:id="@+id/widget_message"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="2dp"
         android:ellipsize="end"
         android:gravity="center"
-        android:includeFontPadding="false"
+        android:includeFontPadding="true"
         android:maxLines="1"
+        android:singleLine="true"
         android:text="조금만 더 기다려요 💜"
         android:textColor="#9A7BA8"
-        android:textSize="11.5sp" />
+        android:textSize="10.5sp" />
+
+    <TextView
+        android:id="@+id/widget_updated_at"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:includeFontPadding="true"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:text="갱신됨 · 08:40"
+        android:textColor="#9CA3AF"
+        android:textSize="8.5sp" />
+
 </LinearLayout>

@@ -2927,12 +2927,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _permissionStatusCard() {
+    final l = L.of(context);
     final hasCriticalIssue = !_notificationPermissionOk;
     final hasWarning = !hasCriticalIssue && !_exactAlarmPermissionOk;
+    final isAllGood = !hasCriticalIssue && !hasWarning;
+
     final bgColor = hasCriticalIssue
-        ? const Color(0xFFFFE7E7)
+        ? const Color(0xFFFFF1F2)
         : hasWarning
-            ? const Color(0xFFFFF4DE)
+            ? const Color(0xFFFFF7E6)
             : const Color(0xFFEAF8EF);
     final borderColor = hasCriticalIssue
         ? const Color(0xFFFCA5A5)
@@ -2945,176 +2948,166 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ? const Color(0xFFF59E0B)
             : const Color(0xFF16A34A);
     final statusText = hasCriticalIssue
-        ? L.of(context).settingsNeeded
+        ? l.pick(ko: '설정 필요', en: 'Needs setup', ja: '設定が必要', vi: 'Cần cài đặt')
         : hasWarning
-            ? L.of(context).caution
-            : L.of(context).permissionOk;
+            ? l.pick(ko: '확인 필요', en: 'Check', ja: '確認', vi: 'Kiểm tra')
+            : l.pick(ko: '정상 작동', en: 'Working', ja: '正常動作', vi: 'Đang hoạt động');
+    final title = isAllGood
+        ? l.pick(ko: '알림이 정상 작동 중이에요', en: 'Reminders are working', ja: '通知は正常に動作中です', vi: 'Nhắc nhở đang hoạt động')
+        : l.permissionTitle;
     final subtitle = hasCriticalIssue
-        ? L.of(context).pick(ko: '알림 권한이 꺼져 있어요. 눌러서 확인하세요.', en: 'Notifications are off. Tap to check.', ja: '通知がオフです。タップして確認してください。', vi: 'Thông báo đang tắt. Nhấn để kiểm tra.')
+        ? l.pick(ko: '알림 권한을 켜야 일정 알림을 받을 수 있어요.', en: 'Turn on notifications to receive reminders.', ja: '通知を受け取るには権限をオンにしてください。', vi: 'Bật thông báo để nhận nhắc nhở.')
         : hasWarning
-            ? L.of(context).pick(ko: '정확한 알람 권한을 확인해주세요.', en: 'Please check exact alarm permission.', ja: '正確なアラーム権限を確認してください。', vi: 'Hãy kiểm tra quyền báo thức chính xác.')
-            : L.of(context).permissionOkSubtitle;
+            ? l.pick(ko: '정확한 시간 알림을 위해 알람 권한을 확인해주세요.', en: 'Check exact alarm permission for on-time reminders.', ja: '正確な時刻の通知にはアラーム権限を確認してください。', vi: 'Kiểm tra quyền báo thức để nhắc đúng giờ.')
+            : l.pick(ko: '일정 알림과 오늘 요약이 준비되어 있어요.', en: 'Event reminders and today summary are ready.', ja: '予定通知と今日のまとめが準備できています。', vi: 'Nhắc lịch và tóm tắt hôm nay đã sẵn sàng.');
+
+    Future<void> sendQuickTest() async {
+      await NotificationService.showNow(
+        id: 999778,
+        title: l.pick(ko: 'TickDay 알림 확인', en: 'TickDay reminder check', ja: 'TickDay通知チェック', vi: 'Kiểm tra nhắc nhở TickDay'),
+        body: l.pick(ko: '알림이 정상적으로 표시됩니다.', en: 'Notifications are showing correctly.', ja: '通知は正常に表示されています。', vi: 'Thông báo hiển thị bình thường.'),
+        payload: 'today_summary',
+      );
+      await _refreshPermissionStatus();
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => setState(() => _permissionCardExpanded = !_permissionCardExpanded),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            padding: EdgeInsets.fromLTRB(16, 13, 16, _permissionCardExpanded ? 14 : 13),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: borderColor),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.025), blurRadius: 18, offset: const Offset(0, 8))],
-            ),
-            child: Column(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.025), blurRadius: 18, offset: const Offset(0, 8))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.72), borderRadius: BorderRadius.circular(10)),
-                      child: Icon(Icons.notifications_active_rounded, color: accentColor, size: 20),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(L.of(context).permissionTitle, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
-                          const SizedBox(height: 2),
-                          Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.75), borderRadius: BorderRadius.circular(999)),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(width: 7, height: 7, decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle)),
-                          const SizedBox(width: 6),
-                          Text(statusText, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: accentColor)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(_permissionCardExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: const Color(0xFF6B7280)),
-                  ],
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.78), borderRadius: BorderRadius.circular(14)),
+                  child: Icon(isAllGood ? Icons.verified_rounded : Icons.notifications_active_rounded, color: accentColor, size: 23),
                 ),
-                if (_permissionCardExpanded) ...[
-                  const SizedBox(height: 12),
-                  Container(height: 1, color: Colors.black.withOpacity(0.06)),
-                  const SizedBox(height: 8),
-                  _permissionRow(
-                    icon: Icons.notifications_none_rounded,
-                    title: L.of(context).pick(ko: '기본 알림', en: 'Basic notifications', ja: '基本通知', vi: 'Thông báo cơ bản'),
-                    ok: _notificationPermissionOk,
-                    okText: L.of(context).normal,
-                    badText: L.of(context).settingsNeeded,
-                    onTap: () => _showPermissionGuide(
-                      title: L.of(context).pick(ko: '기본 알림 권한', en: 'Notification permission', ja: '通知権限', vi: 'Quyền thông báo'),
-                      message: L.of(context).pick(ko: 'D-day 일정 알림을 받으려면 앱 알림 권한이 켜져 있어야 합니다.', en: 'Turn on app notifications to receive D-day reminders.', ja: 'D-day通知を受け取るにはアプリ通知をオンにしてください。', vi: 'Bật thông báo ứng dụng để nhận nhắc nhở D-day.'),
-                      actionLabel: L.of(context).pick(ko: '알림 권한 허용', en: 'Allow notifications', ja: '通知を許可', vi: 'Cho phép thông báo'),
-                      onAction: () async {
-                        await NotificationService.requestNotificationPermission();
-                        await AppSettings.openAppSettings();
-                      },
-                    ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.visible,
+                        softWrap: true,
+                        style: const TextStyle(fontSize: 17, height: 1.18, fontWeight: FontWeight.w800, color: Color(0xFF111827), letterSpacing: -0.2),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12.8, height: 1.35, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.78), borderRadius: BorderRadius.circular(999)),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(width: 6, height: 6, decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle)),
+                                const SizedBox(width: 5),
+                                Text(statusText, style: TextStyle(fontSize: 11.2, fontWeight: FontWeight.w800, color: accentColor)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  _permissionRow(
-                    icon: Icons.alarm_rounded,
-                    title: L.of(context).pick(ko: '정확한 알람', en: 'Exact alarms', ja: '正確なアラーム', vi: 'Báo thức chính xác'),
-                    ok: _exactAlarmPermissionOk,
-                    okText: L.of(context).normal,
-                    badText: L.of(context).settingsNeeded,
-                    onTap: () => _showPermissionGuide(
-                      title: L.of(context).pick(ko: '알람 및 리마인더 권한', en: 'Alarm & reminder permission', ja: 'アラームとリマインダー権限', vi: 'Quyền báo thức & nhắc nhở'),
-                      message: L.of(context).pick(ko: '정확한 시간에 예약 알림을 울리려면 “알람 및 리마인더” 권한이 필요합니다.', en: 'Exact alarm permission is needed for reminders to ring at the right time.', ja: '正確な時刻に通知するには「アラームとリマインダー」権限が必要です。', vi: 'Cần quyền báo thức chính xác để nhắc đúng giờ.'),
-                      actionLabel: L.of(context).pick(ko: '설정 열기', en: 'Open settings', ja: '設定を開く', vi: 'Mở cài đặt'),
-                      onAction: () async {
-                        await NotificationService.requestExactAlarmPermission();
-                        await AppSettings.openAppSettings();
-                      },
-                    ),
-                  ),
-                  _permissionRow(
-                    icon: Icons.battery_saver_outlined,
-                    title: L.of(context).pick(ko: '배터리 최적화', en: 'Battery optimization', ja: 'バッテリー最適化', vi: 'Tối ưu pin'),
-                    ok: true,
-                    okText: L.of(context).normal,
-                    badText: L.of(context).pick(ko: '안내', en: 'Guide', ja: '案内', vi: 'Hướng dẫn'),
-                    onTap: () => _showPermissionGuide(
-                      title: L.of(context).pick(ko: '배터리 최적화 해제 안내', en: 'Battery optimization guide', ja: 'バッテリー最適化解除ガイド', vi: 'Hướng dẫn tối ưu pin'),
-                      message: L.of(context).pick(ko: '일부 휴대폰은 배터리 절약 기능 때문에 예약 알림이 늦게 울릴 수 있습니다. 앱 정보 또는 배터리 설정에서 제한 없음 / 최적화 제외로 설정하면 더 안정적입니다.', en: 'Some phones delay reminders because of battery saving. Set TickDay to unrestricted or exclude it from optimization for better reliability.', ja: '一部の端末では省電力機能により通知が遅れることがあります。アプリ情報またはバッテリー設定で制限なし／最適化除外にすると安定します。', vi: 'Một số điện thoại có thể báo trễ do tiết kiệm pin. Hãy đặt TickDay không giới hạn hoặc loại khỏi tối ưu pin để ổn định hơn.'),
-                      actionLabel: L.of(context).pick(ko: '앱 설정 열기', en: 'Open app settings', ja: 'アプリ設定を開く', vi: 'Mở cài đặt ứng dụng'),
-                      onAction: () => AppSettings.openAppSettings(),
-                    ),
-                    muted: true,
-                  ),
-                  _permissionRow(
-                    icon: Icons.lock_outline_rounded,
-                    title: L.of(context).pick(ko: '잠금화면 표시', en: 'Lock screen display', ja: 'ロック画面表示', vi: 'Hiển thị màn hình khóa'),
-                    ok: true,
-                    okText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
-                    badText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
-                    onTap: () => _showPermissionGuide(
-                      title: L.of(context).pick(ko: '잠금화면 알림 표시', en: 'Lock screen notifications', ja: 'ロック画面通知', vi: 'Thông báo màn hình khóa'),
-                      message: L.of(context).pick(ko: '잠금화면 알림은 앱에서 직접 켤 수 없고 휴대폰 설정에서 켜야 합니다. 경로 예시: 설정 → 알림 → 잠금화면 알림 또는 설정 → 잠금화면 → 알림', en: 'Lock screen notifications must be enabled in your phone settings. Example path: Settings → Notifications → Lock screen notifications.', ja: 'ロック画面通知は端末設定でオンにする必要があります。例: 設定 → 通知 → ロック画面通知。', vi: 'Thông báo màn hình khóa cần bật trong cài đặt điện thoại. Ví dụ: Cài đặt → Thông báo → Thông báo màn hình khóa.'),
-                      actionLabel: L.of(context).pick(ko: '앱 설정 열기', en: 'Open app settings', ja: 'アプリ設定を開く', vi: 'Mở cài đặt ứng dụng'),
-                      onAction: () => AppSettings.openAppSettings(),
-                    ),
-                    muted: true,
-                  ),
-                  _permissionRow(
-                    icon: Icons.dark_mode_outlined,
-                    title: L.of(context).pick(ko: 'AOD / 대기화면', en: 'AOD / standby screen', ja: 'AOD / 待受画面', vi: 'AOD / màn hình chờ'),
-                    ok: true,
-                    okText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
-                    badText: L.of(context).pick(ko: '확인 필요', en: 'Check needed', ja: '確認が必要', vi: 'Cần kiểm tra'),
-                    onTap: () => _showPermissionGuide(
-                      title: L.of(context).pick(ko: 'AOD / 대기화면 표시', en: 'AOD / standby display', ja: 'AOD / 待受画面表示', vi: 'Hiển thị AOD / chờ'),
-                      message: L.of(context).pick(ko: 'Always On Display 표시는 기기 설정에 따라 달라집니다. 휴대폰 설정에서 AOD와 잠금화면 알림 표시가 켜져 있는지 확인해주세요.', en: 'Always On Display depends on your device settings. Check that AOD and lock screen notifications are enabled.', ja: 'Always On Displayは端末設定によって異なります。AODとロック画面通知がオンか確認してください。', vi: 'Always On Display phụ thuộc vào cài đặt thiết bị. Hãy kiểm tra AOD và thông báo màn hình khóa.'),
-                      actionLabel: L.of(context).pick(ko: '앱 설정 열기', en: 'Open app settings', ja: 'アプリ設定を開く', vi: 'Mở cài đặt ứng dụng'),
-                      onAction: () => AppSettings.openAppSettings(),
-                    ),
-                    muted: true,
-                  ),
-                  _permissionRow(
-                    icon: Icons.widgets_outlined,
-                    title: L.of(context).pick(ko: '홈화면 위젯', en: 'Home screen widget', ja: 'ホーム画面ウィジェット', vi: 'Widget màn hình chính'),
-                    ok: false,
-                    okText: L.of(context).normal,
-                    badText: L.of(context).pick(ko: '곧 제공', en: 'Available', ja: '利用可能', vi: 'Có sẵn'),
-                    onTap: () => _showPermissionGuide(
-                      title: L.of(context).pick(ko: '홈화면 위젯', en: 'Home screen widget', ja: 'ホーム画面ウィジェット', vi: 'Widget màn hình chính'),
-                      message: L.of(context).pick(ko: '홈화면에서 바로 보는 D-day 위젯을 사용할 수 있어요. 홈 화면에서 TickDay 위젯을 추가해보세요.', en: 'You can use TickDay D-day widgets on your home screen. Add a TickDay widget from your launcher.', ja: 'ホーム画面でTickDayのD-dayウィジェットを使えます。ランチャーからTickDayウィジェットを追加してください。', vi: 'Bạn có thể dùng widget D-day TickDay trên màn hình chính. Hãy thêm widget TickDay từ launcher.'),
-                      actionLabel: L.of(context).confirm,
-                      onAction: () async {},
-                    ),
-                    muted: true,
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: _refreshPermissionStatus,
-                      icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: Text(L.of(context).pick(ko: '상태 새로고침', en: 'Refresh status', ja: '状態を更新', vi: 'Làm mới trạng thái'), style: const TextStyle(fontWeight: FontWeight.w700)),
-                    ),
-                  ),
-                ],
+                ),
               ],
             ),
-          ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => setState(() => _permissionCardExpanded = !_permissionCardExpanded),
+                    icon: Icon(_permissionCardExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18),
+                    label: Text(_permissionCardExpanded ? l.pick(ko: '접기', en: 'Hide', ja: '閉じる', vi: 'Ẩn') : l.pick(ko: '상세 보기', en: 'Details', ja: '詳細', vi: 'Chi tiết'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    style: OutlinedButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.70), side: BorderSide(color: accentColor.withOpacity(0.20)), foregroundColor: const Color(0xFF374151), padding: const EdgeInsets.symmetric(vertical: 11), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: sendQuickTest,
+                    icon: const Icon(Icons.notifications_active_outlined, size: 17),
+                    label: Text(l.pick(ko: '알림 테스트', en: 'Test', ja: 'テスト', vi: 'Thử'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    style: FilledButton.styleFrom(backgroundColor: accentColor, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 11), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  ),
+                ),
+              ],
+            ),
+            if (_permissionCardExpanded) ...[
+              const SizedBox(height: 12),
+              Container(height: 1, color: Colors.black.withOpacity(0.06)),
+              const SizedBox(height: 8),
+              _permissionRow(
+                icon: Icons.notifications_none_rounded,
+                title: l.pick(ko: '기본 알림', en: 'Basic notifications', ja: '基本通知', vi: 'Thông báo cơ bản'),
+                ok: _notificationPermissionOk,
+                okText: l.normal,
+                badText: l.settingsNeeded,
+                onTap: () => _showPermissionGuide(
+                  title: l.pick(ko: '기본 알림 권한', en: 'Notification permission', ja: '通知権限', vi: 'Quyền thông báo'),
+                  message: l.pick(ko: '일정 알림과 오늘 요약을 받으려면 앱 알림 권한이 필요합니다.', en: 'Notification permission is required for event reminders and today summary.', ja: '予定通知と今日のまとめには通知権限が必要です。', vi: 'Cần quyền thông báo cho nhắc lịch và tóm tắt hôm nay.'),
+                  actionLabel: l.pick(ko: '알림 권한 확인', en: 'Check permission', ja: '権限を確認', vi: 'Kiểm tra quyền'),
+                  onAction: () async {
+                    await NotificationService.requestNotificationPermission();
+                    await AppSettings.openAppSettings();
+                  },
+                ),
+              ),
+              _permissionRow(
+                icon: Icons.alarm_rounded,
+                title: l.pick(ko: '정확한 알람', en: 'Exact alarms', ja: '正確なアラーム', vi: 'Báo thức chính xác'),
+                ok: _exactAlarmPermissionOk,
+                okText: l.normal,
+                badText: l.settingsNeeded,
+                onTap: () => _showPermissionGuide(
+                  title: l.pick(ko: '정확한 알람 권한', en: 'Exact alarm permission', ja: '正確なアラーム権限', vi: 'Quyền báo thức chính xác'),
+                  message: l.pick(ko: '정확한 시간에 알림을 울리려면 알람 및 리마인더 권한이 필요합니다.', en: 'Exact alarm permission helps reminders ring at the right time.', ja: '正確な時刻に通知するにはアラーム権限が必要です。', vi: 'Quyền báo thức giúp nhắc đúng giờ.'),
+                  actionLabel: l.pick(ko: '설정 열기', en: 'Open settings', ja: '設定を開く', vi: 'Mở cài đặt'),
+                  onAction: () async {
+                    await NotificationService.requestExactAlarmPermission();
+                    await AppSettings.openAppSettings();
+                  },
+                ),
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _refreshPermissionStatus,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: Text(l.pick(ko: '상태 새로고침', en: 'Refresh', ja: '更新', vi: 'Làm mới'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -3226,13 +3219,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _notices() {
+    // 개인 일정 카드가 하나라도 있으면 온보딩 공지 카드는 숨깁니다.
+    if (_items.isNotEmpty) return const SizedBox.shrink();
+
     final notices = <Widget>[];
 
-    // 공지카드는 개인 일정 카드처럼 2개가 가로로 나란히 보이게 합니다.
     if (!_hideIntroNotice) {
       notices.add(_noticeCard(
-        L.of(context).firstEventTitle,
-        L.of(context).firstEventSubtitle,
+        L.of(context).pick(ko: '첫 소중한 날을 기록해보세요', en: 'Save your first special day', ja: '最初の大切な日を記録しましょう', vi: 'Lưu ngày đặc biệt đầu tiên'),
+        L.of(context).pick(ko: '생일, 기념일, 여행까지 한눈에 관리하세요.', en: 'Track birthdays, anniversaries, trips and more.', ja: '誕生日、記念日、旅行まで一目で管理。', vi: 'Theo dõi sinh nhật, kỷ niệm và chuyến đi.'),
         Icons.event_available,
         () => _setNoticeHidden(_hideIntroKey, true),
         backgroundColor: const Color(0xFFFFF7D6),
@@ -3242,8 +3237,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (!_hideWidgetNotice) {
       notices.add(_noticeCard(
-        L.of(context).widgetNoticeTitle,
-        L.of(context).widgetNoticeSubtitle,
+        L.of(context).pick(ko: '홈 화면에서 바로 확인하세요', en: 'Check it on your home screen', ja: 'ホーム画面ですぐ確認', vi: 'Xem ngay trên màn hình chính'),
+        L.of(context).pick(ko: '가까운 D-day를 위젯으로 한눈에 볼 수 있어요.', en: 'See your upcoming D-days as widgets.', ja: '近いD-dayをウィジェットで確認できます。', vi: 'Xem D-day sắp tới bằng widget.'),
         Icons.widgets,
         () => _setNoticeHidden(_hideWidgetKey, true),
         backgroundColor: const Color(0xFFEAF7F0),
@@ -3951,7 +3946,19 @@ class _EditPageState extends State<EditPage> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null) {
+      setState(() {
+        final yearChanged = picked.year != _date.year;
+        _date = picked;
+
+        // 매년 반복 일정은 원래 '년도'를 무시하고 월/일만 계산합니다.
+        // 그래서 사용자가 편집 화면에서 년도를 직접 바꿨을 때는
+        // 실제 변경 의도가 반영되도록 자동으로 '반복 안 함'으로 전환합니다.
+        if (yearChanged && _repeatType == 'yearly') {
+          _repeatType = 'none';
+        }
+      });
+    }
   }
 
   Future<void> _pickTime() async {
