@@ -1,7 +1,10 @@
 package com.forgeapps.tickday
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -20,6 +23,10 @@ class MainActivity : FlutterActivity() {
                     val id = initialWidgetItemId
                     initialWidgetItemId = null
                     result.success(id)
+                }
+                "requestPinHomeWidget" -> {
+                    val provider = call.argument<String>("provider") ?: "DdayWidgetProvider"
+                    result.success(requestPinHomeWidget(provider))
                 }
                 else -> result.notImplemented()
             }
@@ -47,5 +54,23 @@ class MainActivity : FlutterActivity() {
         if (data.scheme != "tickday" || data.host != "widget") return null
         val id = data.lastPathSegment ?: return null
         return id.takeIf { it.isNotBlank() }
+    }
+
+    private fun requestPinHomeWidget(provider: String): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+
+        val appWidgetManager = getSystemService(AppWidgetManager::class.java) ?: return false
+        if (!appWidgetManager.isRequestPinAppWidgetSupported) return false
+
+        val component = when (provider) {
+            "DdayWidgetProviderWide" -> ComponentName(this, DdayWidgetProviderWide::class.java)
+            else -> ComponentName(this, DdayWidgetProvider::class.java)
+        }
+
+        return try {
+            appWidgetManager.requestPinAppWidget(component, null, null)
+        } catch (_: Exception) {
+            false
+        }
     }
 }

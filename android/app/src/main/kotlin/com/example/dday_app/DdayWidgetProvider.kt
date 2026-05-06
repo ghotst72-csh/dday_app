@@ -21,16 +21,17 @@ class DdayWidgetProvider : HomeWidgetProvider() {
         widgetData: SharedPreferences
     ) {
         appWidgetIds.forEach { appWidgetId ->
-            val lang = widgetData.getString("widget_lang", Locale.getDefault().language) ?: "ko"
-            val title = widgetData.getString("widget_title", defaultTitle(lang)) ?: defaultTitle(lang)
-            val itemId = widgetData.getString("widget_item_id", "") ?: ""
-            val repeatType = widgetData.getString("widget_repeat_type", "none") ?: "none"
-            val targetMillis = widgetData.getLongCompat("widget_target_millis", 0L)
-            val createdMillis = widgetData.getLongCompat("widget_created_millis", 0L)
-            val month = widgetData.getIntCompat("widget_month", 0)
-            val day = widgetData.getIntCompat("widget_day", 0)
-            val hour = widgetData.getIntCompat("widget_hour", 0)
-            val minute = widgetData.getIntCompat("widget_minute", 0)
+            val prefix = ensureInstancePrefix(widgetData, appWidgetId)
+            val lang = widgetData.getString("${prefix}lang", widgetData.getString("widget_lang", Locale.getDefault().language)) ?: "ko"
+            val title = widgetData.getString("${prefix}title", defaultTitle(lang)) ?: defaultTitle(lang)
+            val itemId = widgetData.getString("${prefix}item_id", "") ?: ""
+            val repeatType = widgetData.getString("${prefix}repeat_type", "none") ?: "none"
+            val targetMillis = widgetData.getLongCompat("${prefix}target_millis", 0L)
+            val createdMillis = widgetData.getLongCompat("${prefix}created_millis", 0L)
+            val month = widgetData.getIntCompat("${prefix}month", 0)
+            val day = widgetData.getIntCompat("${prefix}day", 0)
+            val hour = widgetData.getIntCompat("${prefix}hour", 0)
+            val minute = widgetData.getIntCompat("${prefix}minute", 0)
 
             val effectiveTargetMillis = effectiveTargetMillis(
                 targetMillis = targetMillis,
@@ -78,6 +79,61 @@ class DdayWidgetProvider : HomeWidgetProvider() {
         }
     }
 
+
+    private fun ensureInstancePrefix(widgetData: SharedPreferences, appWidgetId: Int): String {
+        val prefix = "widget_instance_${appWidgetId}_"
+        val hasInstance = widgetData.contains("${prefix}item_id") || widgetData.contains("${prefix}target_millis")
+        if (hasInstance) return prefix
+
+        val pendingId = widgetData.getString("widget_pending_item_id", "") ?: ""
+        val pendingTargetMillis = widgetData.getLongCompat("widget_pending_target_millis", 0L)
+        val sourcePrefix = if (pendingId.isNotEmpty() || pendingTargetMillis > 0L) "widget_pending_" else "widget_"
+
+        val lang = widgetData.getString("${sourcePrefix}lang", Locale.getDefault().language) ?: "ko"
+        val title = widgetData.getString("${sourcePrefix}title", defaultTitle(lang)) ?: defaultTitle(lang)
+        val itemId = widgetData.getString("${sourcePrefix}item_id", "") ?: ""
+        val dday = widgetData.getString("${sourcePrefix}dday", "D-Day") ?: "D-Day"
+        val remain = widgetData.getString("${sourcePrefix}remain", "TickDay") ?: "TickDay"
+        val color = widgetData.getIntCompat("${sourcePrefix}color", 0xFF111827.toInt())
+        val targetMillis = widgetData.getLongCompat("${sourcePrefix}target_millis", 0L)
+        val repeatType = widgetData.getString("${sourcePrefix}repeat_type", "none") ?: "none"
+        val month = widgetData.getIntCompat("${sourcePrefix}month", 0)
+        val day = widgetData.getIntCompat("${sourcePrefix}day", 0)
+        val hour = widgetData.getIntCompat("${sourcePrefix}hour", 0)
+        val minute = widgetData.getIntCompat("${sourcePrefix}minute", 0)
+        val createdMillis = widgetData.getLongCompat("${sourcePrefix}created_millis", 0L)
+
+        widgetData.edit()
+            .putString("${prefix}item_id", itemId)
+            .putString("${prefix}dday", dday)
+            .putString("${prefix}title", title)
+            .putString("${prefix}remain", remain)
+            .putInt("${prefix}color", color)
+            .putLong("${prefix}target_millis", targetMillis)
+            .putString("${prefix}repeat_type", repeatType)
+            .putInt("${prefix}month", month)
+            .putInt("${prefix}day", day)
+            .putInt("${prefix}hour", hour)
+            .putInt("${prefix}minute", minute)
+            .putLong("${prefix}created_millis", createdMillis)
+            .putString("${prefix}lang", lang)
+            .remove("widget_pending_item_id")
+            .remove("widget_pending_dday")
+            .remove("widget_pending_title")
+            .remove("widget_pending_remain")
+            .remove("widget_pending_color")
+            .remove("widget_pending_target_millis")
+            .remove("widget_pending_repeat_type")
+            .remove("widget_pending_month")
+            .remove("widget_pending_day")
+            .remove("widget_pending_hour")
+            .remove("widget_pending_minute")
+            .remove("widget_pending_created_millis")
+            .remove("widget_pending_lang")
+            .apply()
+
+        return prefix
+    }
 
     private fun widgetTitleText(title: String, maxLength: Int): String {
         val clean = title.replace(Regex("\\s+"), " ").trim()

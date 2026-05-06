@@ -322,14 +322,6 @@ class WidgetDeepLinkService {
     }
   }
 
-  static Future<bool?> requestPinHomeWidget(String providerName) async {
-    try {
-      return await _channel.invokeMethod<bool>('requestPinHomeWidget', {'provider': providerName});
-    } catch (_) {
-      return false;
-    }
-  }
-
   static void dispose() {
     _onItemId = null;
     _channel.setMethodCallHandler(null);
@@ -1859,23 +1851,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final upcoming = List<DdayItem>.from(_items)
       ..sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
 
-    return upcoming.take(count).toList();
-  }
-
-  DdayItem? _pinnedWidgetItem() {
+    // 위젯은 사용자가 마지막으로 저장/수정한 일정을 우선 표시합니다.
+    // 이전에는 가장 가까운 일정만 자동 선택해서, 예전 일정(예: 결혼기념일)이 계속 보이는 것처럼 느껴질 수 있었습니다.
     final pinnedId = _widgetPinnedItemId;
-    if (pinnedId == null || pinnedId.isEmpty) return null;
-    for (final item in _items) {
-      if (item.id == pinnedId) return item;
+    if (pinnedId != null && pinnedId.isNotEmpty) {
+      final pinnedIndex = upcoming.indexWhere((item) => item.id == pinnedId);
+      if (pinnedIndex >= 0) {
+        final pinned = upcoming.removeAt(pinnedIndex);
+        upcoming.insert(0, pinned);
+      }
     }
-    return null;
-  }
 
-  DdayItem? _smallWidgetItem() {
-    // Small widget default is always the nearest upcoming event.
-    // Card-specific widget additions are stored as a per-widget pending snapshot
-    // so multiple 1x1 widgets can each keep different events.
-    return _nearestWidgetItem();
+    return upcoming.take(count).toList();
   }
 
   String _widgetRemainText(DdayItem item) {
@@ -1892,7 +1879,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _updateHomeWidget() async {
     try {
       final widgetItems = _nearestWidgetItems(2);
-      final item = _smallWidgetItem();
+      final item = widgetItems.isEmpty ? null : widgetItems.first;
 
       if (item == null) {
         await HomeWidget.saveWidgetData<String>('widget_item_id', '');
@@ -1970,40 +1957,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await HomeWidget.saveWidgetData<String>('${prefix}lang', Localizations.localeOf(context).languageCode);
   }
 
-  Future<void> _savePendingSmallWidgetItem(DdayItem? item) async {
-    if (item == null) {
-      await HomeWidget.saveWidgetData<String>('widget_pending_item_id', '');
-      await HomeWidget.saveWidgetData<String>('widget_pending_dday', 'D-Day');
-      await HomeWidget.saveWidgetData<String>('widget_pending_title', L.of(context).pick(ko: '일정을 등록하세요', en: 'Add an event', ja: '予定を追加してください', vi: 'Thêm sự kiện'));
-      await HomeWidget.saveWidgetData<String>('widget_pending_remain', 'TickDay');
-      await HomeWidget.saveWidgetData<int>('widget_pending_color', const Color(0xFF111827).value);
-      await HomeWidget.saveWidgetData<int>('widget_pending_target_millis', 0);
-      await HomeWidget.saveWidgetData<String>('widget_pending_repeat_type', 'none');
-      await HomeWidget.saveWidgetData<int>('widget_pending_month', 0);
-      await HomeWidget.saveWidgetData<int>('widget_pending_day', 0);
-      await HomeWidget.saveWidgetData<int>('widget_pending_hour', 0);
-      await HomeWidget.saveWidgetData<int>('widget_pending_minute', 0);
-      await HomeWidget.saveWidgetData<int>('widget_pending_created_millis', 0);
-      await HomeWidget.saveWidgetData<String>('widget_pending_lang', Localizations.localeOf(context).languageCode);
-      return;
-    }
-
-    final target = _effectiveTarget(item);
-    await HomeWidget.saveWidgetData<String>('widget_pending_item_id', item.id);
-    await HomeWidget.saveWidgetData<String>('widget_pending_dday', _dDayText(item));
-    await HomeWidget.saveWidgetData<String>('widget_pending_title', item.title);
-    await HomeWidget.saveWidgetData<String>('widget_pending_remain', _widgetRemainText(item));
-    await HomeWidget.saveWidgetData<int>('widget_pending_color', item.colorValue);
-    await HomeWidget.saveWidgetData<int>('widget_pending_target_millis', target.millisecondsSinceEpoch);
-    await HomeWidget.saveWidgetData<String>('widget_pending_repeat_type', item.repeatType);
-    await HomeWidget.saveWidgetData<int>('widget_pending_month', item.targetDate.month);
-    await HomeWidget.saveWidgetData<int>('widget_pending_day', item.targetDate.day);
-    await HomeWidget.saveWidgetData<int>('widget_pending_hour', item.targetTime.hour);
-    await HomeWidget.saveWidgetData<int>('widget_pending_minute', item.targetTime.minute);
-    await HomeWidget.saveWidgetData<int>('widget_pending_created_millis', item.createdAt.millisecondsSinceEpoch);
-    await HomeWidget.saveWidgetData<String>('widget_pending_lang', Localizations.localeOf(context).languageCode);
-  }
-
   Future<void> _setNoticeHidden(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
@@ -2021,17 +1974,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       } else {
         _items.add(item);
       }
+      _widgetPinnedItemId = item.id;
       _sortItems();
     });
 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_widgetPinnedItemIdKey, item.id);
+
     await _saveItems();
     await _updateHomeWidget();
-
-    // Release 빌드에서는 알림 예약/요약 예약이 기기 권한 상태에 따라 늦게 끝나거나
-    // 실패할 수 있습니다. 카드 저장과 첫 카드 축포가 알림 예약을 기다리다 씹히지 않게
-    // 백그라운드로 분리합니다.
-    unawaited(_scheduleNotifications(item));
-    unawaited(_scheduleTodaySummaryNotification());
+    await _scheduleNotifications(item);
+    await _scheduleTodaySummaryNotification();
   }
 
   DateTime _alarmTimeForTarget(DdayItem item, DateTime target) {
@@ -2204,9 +2157,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _deleteItem(DdayItem item) async {
-    // Release 빌드에서 알림 취소가 먼저 실행되면 기기/권한 상태에 따라 삭제 UI가
-    // 늦거나 멈춘 것처럼 보일 수 있습니다. 먼저 화면과 저장소에서 제거하고,
-    // 알림 취소는 뒤에서 시도합니다.
+    await NotificationService.cancel(NotificationService.idFromString(item.id));
     setState(() {
       _items.removeWhere((e) => e.id == item.id);
       _trashItems.removeWhere((e) => e.id == item.id);
@@ -2227,12 +2178,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _saveItems();
     await _saveTrashItems();
     await _updateHomeWidget();
-
-    unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
-    unawaited(_scheduleTodaySummaryNotification());
+    await _scheduleTodaySummaryNotification();
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(L.of(context).pick(ko: '휴지통으로 이동했어요.', en: 'Moved to trash.', ja: 'ゴミ箱に移動しました。', vi: 'Đã chuyển vào thùng rác.')),
@@ -2250,9 +2198,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!_items.any((e) => e.id == item.id)) {
         _items.add(item);
       }
+      _widgetPinnedItemId = item.id;
       _sortItems();
     });
 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_widgetPinnedItemIdKey, item.id);
     await _saveItems();
     await _saveTrashItems();
     await _scheduleNotifications(item);
@@ -2518,7 +2469,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showFirstCardCelebration() {
-    if (!mounted) return;
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
 
     final l = L.of(context);
     final messages = [
@@ -2543,45 +2495,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
     final message = messages[math.Random().nextInt(messages.length)];
 
-    Future<void>.delayed(const Duration(milliseconds: 450), () {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(milliseconds: 1800),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      final overlay = Overlay.maybeOf(context, rootOverlay: true) ?? Overlay.maybeOf(context);
-      if (overlay == null) return;
-
-      late final OverlayEntry entry;
-      entry = OverlayEntry(
-        builder: (_) => _FirstCardCelebrationOverlay(
-          message: message,
-          onDone: () {
-            if (entry.mounted) entry.remove();
-          },
-        ),
-      );
-
-      try {
-        overlay.insert(entry);
-      } catch (_) {
-        // 스낵바는 이미 표시했으므로 추가 처리 없음
-      }
-    });
-  }
-
-  void _confirmDeleteAfterClosingSheet(DdayItem item) {
-    // 휴지통 + 되돌리기가 있으므로 release 안정성을 위해 확인창을 거치지 않고 바로 이동합니다.
-    Future<void>.delayed(const Duration(milliseconds: 120), () {
-      if (!mounted) return;
-      unawaited(_deleteItem(item));
-    });
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _FirstCardCelebrationOverlay(
+        message: message,
+        onDone: () => entry.remove(),
+      ),
+    );
+    overlay.insert(entry);
   }
 
   void _showDetail(DdayItem item) {
@@ -2677,7 +2598,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           child: FilledButton(
                             onPressed: () {
                               Navigator.pop(context);
-                              _confirmDeleteAfterClosingSheet(item);
+                              _confirmDelete(item);
                             },
                             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF111827), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                             child: Text(L.of(context).delete, style: TextStyle(fontWeight: FontWeight.w700)),
@@ -2766,17 +2687,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 Navigator.pop(context);
                 _copyItem(item);
               }),
-              _menuTile(
-                Icons.widgets_outlined,
-                L.of(context).pick(ko: '홈 위젯에 추가', en: 'Add to home widget', ja: 'ホームウィジェットに追加', vi: 'Thêm vào widget'),
-                () {
-                  Navigator.pop(context);
-                  _requestPinHomeWidget(wide: false, pinnedItem: item);
-                },
-              ),
               _menuTile(Icons.delete_outline, L.of(context).delete, () {
                 Navigator.pop(context);
-                _confirmDeleteAfterClosingSheet(item);
+                _confirmDelete(item);
               }, danger: true),
             ],
           ),
@@ -2793,55 +2706,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _requestPinHomeWidget({required bool wide, DdayItem? pinnedItem, bool useNearestForSmall = false}) async {
+  Future<void> _requestPinHomeWidget({required bool wide}) async {
     final providerName = wide ? 'DdayWidgetProviderWide' : 'DdayWidgetProvider';
     final widgetLabel = wide ? L.of(context).pick(ko: '넓은 위젯(2개 표시)', en: 'Wide widget (2 events)', ja: '横長ウィジェット（2件）', vi: 'Widget rộng (2 sự kiện)') : L.of(context).pick(ko: '작은 위젯(1개 표시)', en: 'Small widget (1 event)', ja: '小さいウィジェット（1件）', vi: 'Widget nhỏ (1 sự kiện)');
 
-    if (wide) {
-      await _updateHomeWidget();
-    } else {
-      final itemToPin = pinnedItem ?? _nearestWidgetItem();
-      await _savePendingSmallWidgetItem(itemToPin);
-    }
-    if (!mounted) return;
+    await _updateHomeWidget();
 
-    bool requested = false;
-
-    // Release-safe path: call our native Android requestPinAppWidget directly first.
-    // The previous HomeWidget plugin path could fall back to the manual guide on release builds
-    // because the qualified provider name was still the old com.example.dday_app path.
+    bool supported = false;
     try {
-      requested = await WidgetDeepLinkService.requestPinHomeWidget(providerName) ?? false;
+      supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
     } catch (_) {
-      requested = false;
-    }
-
-    // Fallback to the plugin with the real application package name.
-    if (!requested) {
-      try {
-        requested = await HomeWidget.isRequestPinWidgetSupported() ?? false;
-        if (requested) {
-          await HomeWidget.requestPinWidget(
-            name: providerName,
-            androidName: providerName,
-            qualifiedAndroidName: 'com.forgeapps.tickday.$providerName',
-          );
-        }
-      } catch (_) {
-        requested = false;
-      }
+      supported = false;
     }
 
     if (!mounted) return;
 
-    if (requested) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(L.of(context).pick(ko: '$widgetLabel 추가 창을 열었습니다.', en: '$widgetLabel add screen opened.', ja: '$widgetLabel の追加画面を開きました。', vi: 'Đã mở màn hình thêm $widgetLabel.'))),
-      );
+    if (!supported) {
+      await _showManualWidgetGuide(widgetLabel);
       return;
     }
 
-    await _showManualWidgetGuide(widgetLabel);
+    try {
+      await HomeWidget.requestPinWidget(
+        name: providerName,
+        androidName: providerName,
+        qualifiedAndroidName: 'com.example.dday_app.$providerName',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(L.of(context).pick(ko: '$widgetLabel 추가 요청을 보냈습니다. 홈 화면에서 확인해보세요.', en: '$widgetLabel add request sent. Check your home screen.', ja: '$widgetLabel の追加リクエストを送信しました。ホーム画面を確認してください。', vi: 'Đã gửi yêu cầu thêm $widgetLabel. Hãy kiểm tra màn hình chính.'))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      await _showManualWidgetGuide(widgetLabel);
+    }
   }
 
   Future<void> _showManualWidgetGuide(String widgetLabel) async {
@@ -2917,7 +2815,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => WidgetPreviewPage(
           items: previewItems,
-          onAddSmall: () => _requestPinHomeWidget(wide: false, useNearestForSmall: true),
+          onAddSmall: () => _requestPinHomeWidget(wide: false),
           onAddWide: () => _requestPinHomeWidget(wide: true),
         ),
       ),
@@ -4621,23 +4519,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ),
               Positioned(
-                top: 4,
-                left: 4,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () => unawaited(_deleteItem(item)),
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
                 top: 5,
                 right: 3,
                 child: GestureDetector(
@@ -4684,7 +4565,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       const SizedBox(width: 14),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, letterSpacing: -0.2)), const SizedBox(height: 4), Text('${_fullDate(_effectiveTarget(item))} · ${_remainText(item)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF6B7280)))])),
                       Text(L.of(context).pick(ko: '${_daysLeft(item)}일', en: 'D-${_daysLeft(item)}', ja: 'あと${_daysLeft(item)}日', vi: 'Còn ${_daysLeft(item)} ngày'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.4)),
-                      IconButton(onPressed: () => unawaited(_deleteItem(item)), icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent)),
                       IconButton(onPressed: () => _showItemMenu(item), icon: const Icon(Icons.more_vert, color: Color(0xFF9CA3AF))),
                     ],
                   ),
