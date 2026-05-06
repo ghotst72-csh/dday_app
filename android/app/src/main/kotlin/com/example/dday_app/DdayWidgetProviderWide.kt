@@ -1,4 +1,4 @@
-package com.example.dday_app
+package com.forgeapps.tickday
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -24,21 +24,22 @@ class DdayWidgetProviderWide : HomeWidgetProvider() {
         appWidgetIds.forEach { appWidgetId ->
             try {
                 val views = RemoteViews(context.packageName, R.layout.dday_widget_wide)
-                val hasFirst = bindRow(context, views, appWidgetId, widgetData, 1, R.id.widget_wide_row_1, R.id.widget_wide_dday_1, R.id.widget_wide_title_1, R.id.widget_wide_progress_1, R.id.widget_wide_remain_1, R.id.widget_wide_message_1, "일정을 등록하세요", "D-Day", "TickDay")
-                val hasSecond = bindRow(context, views, appWidgetId, widgetData, 2, R.id.widget_wide_row_2, R.id.widget_wide_dday_2, R.id.widget_wide_title_2, R.id.widget_wide_progress_2, R.id.widget_wide_remain_2, R.id.widget_wide_message_2, "두 번째 일정을 추가하세요", "D+", "TickDay")
+                val lang = widgetData.getString("widget_lang", Locale.getDefault().language) ?: "ko"
+                val hasFirst = bindRow(context, views, appWidgetId, widgetData, 1, R.id.widget_wide_row_1, R.id.widget_wide_dday_1, R.id.widget_wide_title_1, R.id.widget_wide_progress_1, R.id.widget_wide_remain_1, R.id.widget_wide_message_1, defaultTitle(lang), "D-Day", "TickDay")
+                val hasSecond = bindRow(context, views, appWidgetId, widgetData, 2, R.id.widget_wide_row_2, R.id.widget_wide_dday_2, R.id.widget_wide_title_2, R.id.widget_wide_progress_2, R.id.widget_wide_remain_2, R.id.widget_wide_message_2, secondDefaultTitle(lang), "D+", "TickDay")
                 views.setViewVisibility(R.id.widget_wide_divider, if (hasSecond) View.VISIBLE else View.GONE)
                 if (!hasFirst && !hasSecond) views.setViewVisibility(R.id.widget_wide_row_1, View.VISIBLE)
-                val lang = widgetData.getString("widget_lang", Locale.getDefault().language) ?: "ko"
                 views.setTextViewText(R.id.widget_wide_updated_at, updatedText(lang))
                 appWidgetManager.updateAppWidget(appWidgetId, views)
             } catch (_: Exception) {
                 val fallback = RemoteViews(context.packageName, R.layout.dday_widget_wide)
                 fallback.setTextViewText(R.id.widget_wide_dday_1, "D-Day")
                 fallback.setTextViewText(R.id.widget_wide_title_1, "TickDay")
-                fallback.setTextViewText(R.id.widget_wide_remain_1, "앱을 열어 위젯을 갱신하세요")
-                fallback.setTextViewText(R.id.widget_wide_message_1, "첫 일정을 등록해보세요")
+                val fallbackLang = Locale.getDefault().language
+                fallback.setTextViewText(R.id.widget_wide_remain_1, refreshWidgetText(fallbackLang))
+                fallback.setTextViewText(R.id.widget_wide_message_1, defaultMessage(fallbackLang))
                 fallback.setProgressBar(R.id.widget_wide_progress_1, 100, 0, false)
-                fallback.setTextViewText(R.id.widget_wide_updated_at, updatedText(Locale.getDefault().language))
+                fallback.setTextViewText(R.id.widget_wide_updated_at, updatedText(fallbackLang))
                 fallback.setViewVisibility(R.id.widget_wide_divider, View.GONE)
                 fallback.setViewVisibility(R.id.widget_wide_row_2, View.GONE)
                 appWidgetManager.updateAppWidget(appWidgetId, fallback)
@@ -511,6 +512,9 @@ class DdayWidgetProviderWide : HomeWidgetProvider() {
     }
 
     private fun defaultMessage(lang: String): String = when (lang) { "en" -> "Add your first event"; "ja" -> "最初の予定を追加しましょう"; "vi" -> "Thêm sự kiện đầu tiên"; else -> "첫 일정을 등록해보세요" }
+    private fun defaultTitle(lang: String): String = when (lang) { "en" -> "Add an event"; "ja" -> "予定を追加してください"; "vi" -> "Thêm sự kiện"; else -> "일정을 등록하세요" }
+    private fun secondDefaultTitle(lang: String): String = when (lang) { "en" -> "Add another event"; "ja" -> "2つ目の予定を追加してください"; "vi" -> "Thêm sự kiện thứ hai"; else -> "두 번째 일정을 추가하세요" }
+    private fun refreshWidgetText(lang: String): String = when (lang) { "en" -> "Open the app to refresh the widget"; "ja" -> "アプリを開いてウィジェットを更新してください"; "vi" -> "Mở ứng dụng để cập nhật widget"; else -> "앱을 열어 위젯을 갱신하세요" }
     private fun progressPercent(createdMillis: Long, targetMillis: Long): Int { if (createdMillis <= 0L || targetMillis <= 0L) return 0; val total = targetMillis - createdMillis; val elapsed = System.currentTimeMillis() - createdMillis; if (total <= 0L) return 100; return ((elapsed.toDouble() / total.toDouble()) * 100.0).toInt().coerceIn(0,100) }
     private fun daysUntil(targetMillis: Long): Long { val now = Calendar.getInstance(); val today = Calendar.getInstance().apply { set(now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH), 0, 0, 0); set(Calendar.MILLISECOND, 0) }; val target = Calendar.getInstance().apply { timeInMillis = targetMillis; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }; return TimeUnit.MILLISECONDS.toDays(target.timeInMillis - today.timeInMillis) }
     private fun SharedPreferences.getLongCompat(key: String, defaultValue: Long): Long = try { getLong(key, defaultValue) } catch (_: ClassCastException) { getInt(key, defaultValue.toInt()).toLong() }

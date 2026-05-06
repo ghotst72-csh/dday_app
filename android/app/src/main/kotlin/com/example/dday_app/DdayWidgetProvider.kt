@@ -1,4 +1,4 @@
-package com.example.dday_app
+package com.forgeapps.tickday
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -21,10 +21,10 @@ class DdayWidgetProvider : HomeWidgetProvider() {
         widgetData: SharedPreferences
     ) {
         appWidgetIds.forEach { appWidgetId ->
-            val title = widgetData.getString("widget_title", "일정을 등록하세요") ?: "일정을 등록하세요"
+            val lang = widgetData.getString("widget_lang", Locale.getDefault().language) ?: "ko"
+            val title = widgetData.getString("widget_title", defaultTitle(lang)) ?: defaultTitle(lang)
             val itemId = widgetData.getString("widget_item_id", "") ?: ""
             val repeatType = widgetData.getString("widget_repeat_type", "none") ?: "none"
-            val lang = widgetData.getString("widget_lang", Locale.getDefault().language) ?: "ko"
             val targetMillis = widgetData.getLongCompat("widget_target_millis", 0L)
             val createdMillis = widgetData.getLongCompat("widget_created_millis", 0L)
             val month = widgetData.getIntCompat("widget_month", 0)
@@ -506,6 +506,13 @@ class DdayWidgetProvider : HomeWidgetProvider() {
         "ja" -> "最初の予定を追加しましょう"
         "vi" -> "Thêm sự kiện đầu tiên"
         else -> "첫 일정을 등록해보세요"
+    }
+
+    private fun defaultTitle(lang: String): String = when (lang) {
+        "en" -> "Add an event"
+        "ja" -> "予定を追加してください"
+        "vi" -> "Thêm sự kiện"
+        else -> "일정을 등록하세요"
     }
 
     private fun progressPercent(createdMillis: Long, targetMillis: Long): Int {
