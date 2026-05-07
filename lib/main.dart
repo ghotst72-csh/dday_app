@@ -26,6 +26,7 @@ const String _todaySummaryEnabledKey = 'tickday_today_summary_enabled';
 const String _todaySummaryHourKey = 'tickday_today_summary_hour';
 const String _todaySummaryMinuteKey = 'tickday_today_summary_minute';
 const String _widgetPinnedItemIdKey = 'tickday_widget_pinned_item_id';
+const String _permanentlyDeletedWidgetIdsKey = 'tickday_permanently_deleted_widget_ids';
 const String _privacyPolicyUrl = 'https://ghotst72-csh.github.io/tickday-policy/privacy.html';
 const String _termsOfUseUrl = 'https://ghotst72-csh.github.io/tickday-terms/terms.html';
 const int _todaySummaryNotificationId = 999101;
@@ -1496,8 +1497,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await prefs.setInt(_appOpenCountKey, openCount);
 
     if (alreadyShown) return;
-    if (openCount < 3) return;
-    if (_items.length < 2) return;
+    if (openCount < 3 && _items.length < 2) return;
 
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
@@ -1671,7 +1671,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     }
 
-    if (targetItem == null) return;
+    if (targetItem == null) {
+      _pendingNotificationItemId = null;
+      // 이미 휴지통에서 완전 삭제된 일정의 위젯/알림 딥링크가 남아 있어도
+      // 휴지통 복구나 Undo가 다시 살아나지 않도록 여기서 종료합니다.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).clearSnackBars();
+        _showInfoSnack(L.of(context).pick(
+          ko: '이미 삭제된 일정이에요.',
+          en: 'This event has already been deleted.',
+          ja: 'この予定はすでに削除されています。',
+          vi: 'Sự kiện này đã bị xóa.',
+        ));
+      });
+      return;
+    }
+
     _pendingNotificationItemId = null;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1847,6 +1863,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await prefs.setStringList(_trashItemsKey, _trashItems.map((e) => jsonEncode(e.toJson())).toList());
   }
 
+  Future<void> _markWidgetItemsPermanentlyDeleted(Iterable<String> itemIds) async {
+    final idsToAdd = itemIds.where((id) => id.trim().isNotEmpty).toSet();
+    if (idsToAdd.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getStringList(_permanentlyDeletedWidgetIdsKey) ?? <String>[];
+    final merged = <String>{...existing, ...idsToAdd}.toList();
+
+    await prefs.setStringList(_permanentlyDeletedWidgetIdsKey, merged);
+
+    // Android 홈 위젯 Provider가 삭제된 일정 ID를 알 수 있도록 HomeWidget 저장소에도 기록합니다.
+    // 기존 위젯 박스는 Android 정책상 앱이 강제로 제거할 수 없으므로,
+    // 해당 위젯은 "일정을 선택하세요" 상태로 안전하게 초기화됩니다.
+    await HomeWidget.saveWidgetData<String>('widget_deleted_item_ids', jsonEncode(merged));
+    await HomeWidget.updateWidget(androidName: 'DdayWidgetProvider');
+  }
+
 
   DdayItem? _nearestWidgetItem() {
     final items = _nearestWidgetItems(1);
@@ -1889,10 +1922,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return l.pick(ko: '${days}일 남음', en: '${days}d left', ja: 'あと${days}日', vi: 'Còn ${days} ngày');
   }
 
+  Future<void> _saveWidgetItemsSnapshot() async {
+    final snapshot = _items.map((item) {
+      final target = _effectiveTarget(item);
+      return {
+        'id': item.id,
+        'title': item.title,
+        'dday': _dDayText(item),
+        'remain': _widgetRemainText(item),
+        'color': item.colorValue,
+        'targetMillis': target.millisecondsSinceEpoch,
+        'repeatType': item.repeatType,
+        'month': item.targetDate.month,
+        'day': item.targetDate.day,
+        'hour': item.targetTime.hour,
+        'minute': item.targetTime.minute,
+        'createdMillis': item.createdAt.millisecondsSinceEpoch,
+      };
+    }).toList();
+
+    await HomeWidget.saveWidgetData<String>('widget_items_snapshot', jsonEncode(snapshot));
+  }
+
   Future<void> _updateHomeWidget() async {
     try {
       final widgetItems = _nearestWidgetItems(2);
       final item = _smallWidgetItem();
+
+      await _saveWidgetItemsSnapshot();
 
       if (item == null) {
         await HomeWidget.saveWidgetData<String>('widget_item_id', '');
@@ -2032,6 +2089,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // 백그라운드로 분리합니다.
     unawaited(_scheduleNotifications(item));
     unawaited(_scheduleTodaySummaryNotification());
+    unawaited(_maybeShowReviewPrompt());
   }
 
   DateTime _alarmTimeForTarget(DdayItem item, DateTime target) {
@@ -2245,6 +2303,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreTrashItem(DdayItem item) async {
+    final canRestore = _trashItems.any((e) => e.id == item.id);
+    if (!canRestore) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      _showInfoSnack(L.of(context).pick(
+        ko: '이미 완전히 삭제된 일정이에요.',
+        en: 'This event was permanently deleted.',
+        ja: 'この予定は完全に削除されています。',
+        vi: 'Sự kiện này đã bị xóa vĩnh viễn.',
+      ));
+      return;
+    }
+
     setState(() {
       _trashItems.removeWhere((e) => e.id == item.id);
       if (!_items.any((e) => e.id == item.id)) {
@@ -2268,15 +2339,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _trashItems.removeWhere((e) => e.id == item.id);
     });
     await _saveTrashItems();
+    await _markWidgetItemsPermanentlyDeleted([item.id]);
+    unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    unawaited(_scheduleTodaySummaryNotification());
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     _showInfoSnack(L.of(context).pick(ko: '완전히 삭제했어요.', en: 'Permanently deleted.', ja: '完全に削除しました。', vi: 'Đã xóa vĩnh viễn.'));
   }
 
   Future<void> _emptyTrash() async {
     if (_trashItems.isEmpty) return;
+    final deletedItems = List<DdayItem>.from(_trashItems);
     setState(() => _trashItems.clear());
     await _saveTrashItems();
+    await _markWidgetItemsPermanentlyDeleted(deletedItems.map((e) => e.id));
+    for (final item in deletedItems) {
+      unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    }
+    unawaited(_scheduleTodaySummaryNotification());
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     _showInfoSnack(L.of(context).pick(ko: '휴지통을 비웠어요.', en: 'Trash emptied.', ja: 'ゴミ箱を空にしました。', vi: 'Đã dọn thùng rác.'));
   }
 
@@ -4621,23 +4703,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ),
               Positioned(
-                top: 4,
-                left: 4,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () => unawaited(_deleteItem(item)),
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
                 top: 5,
                 right: 3,
                 child: GestureDetector(
@@ -4684,7 +4749,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       const SizedBox(width: 14),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, letterSpacing: -0.2)), const SizedBox(height: 4), Text('${_fullDate(_effectiveTarget(item))} · ${_remainText(item)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF6B7280)))])),
                       Text(L.of(context).pick(ko: '${_daysLeft(item)}일', en: 'D-${_daysLeft(item)}', ja: 'あと${_daysLeft(item)}日', vi: 'Còn ${_daysLeft(item)} ngày'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.4)),
-                      IconButton(onPressed: () => unawaited(_deleteItem(item)), icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent)),
                       IconButton(onPressed: () => _showItemMenu(item), icon: const Icon(Icons.more_vert, color: Color(0xFF9CA3AF))),
                     ],
                   ),

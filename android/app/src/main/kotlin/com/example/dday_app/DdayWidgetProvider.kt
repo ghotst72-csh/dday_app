@@ -12,6 +12,7 @@ import java.util.Calendar
 import java.util.Locale
 import java.text.SimpleDateFormat
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 
 class DdayWidgetProvider : HomeWidgetProvider() {
     override fun onUpdate(
@@ -23,15 +24,31 @@ class DdayWidgetProvider : HomeWidgetProvider() {
         appWidgetIds.forEach { appWidgetId ->
             val prefix = ensureInstancePrefix(widgetData, appWidgetId)
             val lang = widgetData.getString("${prefix}lang", widgetData.getString("widget_lang", Locale.getDefault().language)) ?: "ko"
-            val title = widgetData.getString("${prefix}title", defaultTitle(lang)) ?: defaultTitle(lang)
+            var title = widgetData.getString("${prefix}title", defaultTitle(lang)) ?: defaultTitle(lang)
             val itemId = widgetData.getString("${prefix}item_id", "") ?: ""
-            val repeatType = widgetData.getString("${prefix}repeat_type", "none") ?: "none"
-            val targetMillis = widgetData.getLongCompat("${prefix}target_millis", 0L)
-            val createdMillis = widgetData.getLongCompat("${prefix}created_millis", 0L)
-            val month = widgetData.getIntCompat("${prefix}month", 0)
-            val day = widgetData.getIntCompat("${prefix}day", 0)
-            val hour = widgetData.getIntCompat("${prefix}hour", 0)
-            val minute = widgetData.getIntCompat("${prefix}minute", 0)
+            val isDeletedItem = itemId.isNotBlank() && isDeletedWidgetItem(widgetData, itemId)
+            var repeatType = widgetData.getString("${prefix}repeat_type", "none") ?: "none"
+            var targetMillis = widgetData.getLongCompat("${prefix}target_millis", 0L)
+            var createdMillis = widgetData.getLongCompat("${prefix}created_millis", 0L)
+            var month = widgetData.getIntCompat("${prefix}month", 0)
+            var day = widgetData.getIntCompat("${prefix}day", 0)
+            var hour = widgetData.getIntCompat("${prefix}hour", 0)
+            var minute = widgetData.getIntCompat("${prefix}minute", 0)
+            var color = widgetData.getIntCompat("${prefix}color", 0xFF111827.toInt())
+
+            if (!isDeletedItem && itemId.isNotBlank()) {
+                snapshotForItem(widgetData, itemId)?.let { snapshot ->
+                    title = snapshot.title
+                    repeatType = snapshot.repeatType
+                    targetMillis = snapshot.targetMillis
+                    createdMillis = snapshot.createdMillis
+                    month = snapshot.month
+                    day = snapshot.day
+                    hour = snapshot.hour
+                    minute = snapshot.minute
+                    color = snapshot.color
+                }
+            }
 
             val effectiveTargetMillis = effectiveTargetMillis(
                 targetMillis = targetMillis,
@@ -42,29 +59,32 @@ class DdayWidgetProvider : HomeWidgetProvider() {
                 minute = minute
             )
 
-            val dday = if (effectiveTargetMillis > 0L) ddayText(effectiveTargetMillis) else "D-Day"
-            val remain = if (effectiveTargetMillis > 0L) remainText(effectiveTargetMillis, lang) else "TickDay"
-            val message = if (effectiveTargetMillis > 0L) emotionMessage(title, effectiveTargetMillis, lang) else defaultMessage(lang)
-            val progress = progressPercent(createdMillis, effectiveTargetMillis)
+            val dday = if (isDeletedItem) "--" else if (effectiveTargetMillis > 0L) ddayText(effectiveTargetMillis) else "D-Day"
+            val remain = if (isDeletedItem) selectEventText(lang) else if (effectiveTargetMillis > 0L) remainText(effectiveTargetMillis, lang) else "TickDay"
+            val message = if (isDeletedItem) "" else if (effectiveTargetMillis > 0L) emotionMessage(title, effectiveTargetMillis, lang) else defaultMessage(lang)
+            val progress = if (isDeletedItem) 0 else progressPercent(createdMillis, effectiveTargetMillis)
+            val displayTitle = if (isDeletedItem) "TickDay" else title
 
             val views = RemoteViews(context.packageName, R.layout.dday_widget)
             views.setTextViewText(R.id.widget_dday, dday)
-            views.setTextViewText(R.id.widget_title, widgetTitleText(title, 14))
+            views.setTextViewText(R.id.widget_title, widgetTitleText(displayTitle, 14))
             views.setTextViewText(R.id.widget_remain, remain)
             views.setTextViewText(R.id.widget_message, message)
             views.setProgressBar(R.id.widget_progress, 100, progress, false)
             views.setTextViewText(R.id.widget_updated_at, updatedText(lang))
 
             // ✅ 위젯 색상 안전 적용: HomeWidget 캐시 타입이 Int/Long으로 섞여도 크래시 방지
-            val color = widgetData.getIntCompat("widget_color", 0xFF111827.toInt())
+            if (isDeletedItem) color = 0xFF9CA3AF.toInt()
             views.setTextColor(R.id.widget_dday, color)
             views.setTextColor(R.id.widget_title, color)
             views.setTextColor(R.id.widget_remain, color)
 
             val launchIntent = Intent(context, MainActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
+                if (!isDeletedItem && itemId.isNotBlank()) {
+                    action = Intent.ACTION_VIEW
+                    data = Uri.parse("tickday://widget/$itemId")
+                }
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                data = Uri.parse("tickday://widget/$itemId")
             }
 
             val pendingIntent = PendingIntent.getActivity(
@@ -133,6 +153,60 @@ class DdayWidgetProvider : HomeWidgetProvider() {
             .apply()
 
         return prefix
+    }
+
+
+    private data class WidgetItemSnapshot(
+        val title: String,
+        val color: Int,
+        val targetMillis: Long,
+        val repeatType: String,
+        val month: Int,
+        val day: Int,
+        val hour: Int,
+        val minute: Int,
+        val createdMillis: Long
+    )
+
+    private fun snapshotForItem(widgetData: SharedPreferences, itemId: String): WidgetItemSnapshot? {
+        val raw = widgetData.getString("widget_items_snapshot", "") ?: ""
+        if (raw.isBlank()) return null
+
+        return try {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                if (obj.optString("id") == itemId) {
+                    return WidgetItemSnapshot(
+                        title = obj.optString("title", defaultTitle(Locale.getDefault().language)),
+                        color = obj.optLong("color", 0xFF111827L).toInt(),
+                        targetMillis = obj.optLong("targetMillis", 0L),
+                        repeatType = obj.optString("repeatType", "none"),
+                        month = obj.optInt("month", 0),
+                        day = obj.optInt("day", 0),
+                        hour = obj.optInt("hour", 0),
+                        minute = obj.optInt("minute", 0),
+                        createdMillis = obj.optLong("createdMillis", 0L)
+                    )
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isDeletedWidgetItem(widgetData: SharedPreferences, itemId: String): Boolean {
+        val raw = widgetData.getString("widget_deleted_item_ids", "") ?: ""
+        if (raw.isBlank()) return false
+        return raw.contains("\"$itemId\"") || raw.split(',', '[', ']', ' ', '\n', '\r', '\t').any { it.trim().trim('\"') == itemId }
+    }
+
+    private fun selectEventText(lang: String): String = when (lang) {
+        "en" -> "Select an event"
+        "ja" -> "予定を選択してください"
+        "vi" -> "Hãy chọn sự kiện"
+        else -> "일정을 선택하세요"
     }
 
     private fun widgetTitleText(title: String, maxLength: Int): String {

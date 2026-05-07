@@ -11,18 +11,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 
 const String _localePrefsKey = 'tickday_locale';
 const String _splashSeenPrefsKey = 'tickday_splash_seen';
+const String _firstGuideSeenPrefsKey = 'tickday_first_guide_seen';
 const String _globalReminderEnabledKey = 'tickday_global_reminder_enabled';
 const String _defaultAlarmMinutesKey = 'tickday_default_alarm_minutes';
 const String _todaySummaryEnabledKey = 'tickday_today_summary_enabled';
 const String _todaySummaryHourKey = 'tickday_today_summary_hour';
 const String _todaySummaryMinuteKey = 'tickday_today_summary_minute';
 const String _widgetPinnedItemIdKey = 'tickday_widget_pinned_item_id';
+const String _permanentlyDeletedWidgetIdsKey = 'tickday_permanently_deleted_widget_ids';
+const String _privacyPolicyUrl = 'https://ghotst72-csh.github.io/tickday-policy/privacy.html';
+const String _termsOfUseUrl = 'https://ghotst72-csh.github.io/tickday-terms/terms.html';
 const int _todaySummaryNotificationId = 999101;
 const int _todaySummaryScheduleDays = 7;
 final ValueNotifier<Locale?> appLocaleNotifier = ValueNotifier<Locale?>(null);
@@ -317,6 +323,14 @@ class WidgetDeepLinkService {
     }
   }
 
+  static Future<bool?> requestPinHomeWidget(String providerName) async {
+    try {
+      return await _channel.invokeMethod<bool>('requestPinHomeWidget', {'provider': providerName});
+    } catch (_) {
+      return false;
+    }
+  }
+
   static void dispose() {
     _onItemId = null;
     _channel.setMethodCallHandler(null);
@@ -326,6 +340,7 @@ class WidgetDeepLinkService {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
+  unawaited(MobileAds.instance.initialize());
   runApp(const DdayApp());
 }
 
@@ -389,6 +404,7 @@ class SplashGate extends StatefulWidget {
 
 class _SplashGateState extends State<SplashGate> {
   bool? _showSplash;
+  bool _isFirstLaunch = false;
 
   @override
   void initState() {
@@ -397,10 +413,18 @@ class _SplashGateState extends State<SplashGate> {
   }
 
   Future<void> _checkSplash() async {
-    // TickDay는 실행 시 짧은 준비 화면을 보여주는 구조가 더 자연스러워서
-    // 이전 실행 여부와 관계없이 매번 스플래시를 표시합니다.
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeenSplash = prefs.getBool(_splashSeenPrefsKey) ?? false;
+
+    if (!hasSeenSplash) {
+      await prefs.setBool(_splashSeenPrefsKey, true);
+    }
+
     if (!mounted) return;
-    setState(() => _showSplash = true);
+    setState(() {
+      _isFirstLaunch = !hasSeenSplash;
+      _showSplash = true;
+    });
   }
 
   Future<void> _finishSplash() async {
@@ -414,15 +438,24 @@ class _SplashGateState extends State<SplashGate> {
       return const Scaffold(backgroundColor: Color(0xFFF4F6FA));
     }
     if (_showSplash == true) {
-      return TickDaySplashScreen(onDone: _finishSplash);
+      return TickDaySplashScreen(
+        isFirstLaunch: _isFirstLaunch,
+        onDone: _finishSplash,
+      );
     }
     return const HomePage();
   }
 }
 
 class TickDaySplashScreen extends StatefulWidget {
+  final bool isFirstLaunch;
   final Future<void> Function() onDone;
-  const TickDaySplashScreen({super.key, required this.onDone});
+
+  const TickDaySplashScreen({
+    super.key,
+    required this.isFirstLaunch,
+    required this.onDone,
+  });
 
   @override
   State<TickDaySplashScreen> createState() => _TickDaySplashScreenState();
@@ -435,6 +468,18 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
 
   List<String> _messages(BuildContext context) {
     final l = L.of(context);
+
+    if (!widget.isFirstLaunch) {
+      return [
+        l.pick(
+          ko: '오늘의 일정을 불러오는 중이에요',
+          en: 'Loading your days',
+          ja: '今日の予定を読み込んでいます',
+          vi: 'Đang tải lịch của bạn',
+        ),
+      ];
+    }
+
     return [
       l.pick(
         ko: '멋진 기기를 사용 중이시네요 😊',
@@ -464,6 +509,8 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
   }
 
   IconData _splashIcon(int index) {
+    if (!widget.isFirstLaunch) return Icons.event_available_rounded;
+
     switch (index) {
       case 0:
         return Icons.lightbulb_outline_rounded;
@@ -483,16 +530,25 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
     super.initState();
     _iconController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: Duration(milliseconds: widget.isFirstLaunch ? 1100 : 450),
     )..repeat(reverse: true);
-    _timer = Timer.periodic(const Duration(milliseconds: 900), (timer) {
+
+    final messagesCount = widget.isFirstLaunch ? 4 : 1;
+    if (messagesCount <= 1) {
+      _timer = Timer(Duration(milliseconds: widget.isFirstLaunch ? 1200 : 650), () {
+        if (!mounted) return;
+        widget.onDone();
+      });
+      return;
+    }
+
+    _timer = Timer.periodic(Duration(milliseconds: widget.isFirstLaunch ? 900 : 350), (timer) {
       if (!mounted) return;
-      final count = _messages(context).length;
-      if (_index < count - 1) {
+      if (_index < messagesCount - 1) {
         setState(() => _index++);
       } else {
         timer.cancel();
-        Future<void>.delayed(const Duration(milliseconds: 700), widget.onDone);
+        Future<void>.delayed(Duration(milliseconds: widget.isFirstLaunch ? 700 : 150), widget.onDone);
       }
     });
   }
@@ -507,6 +563,10 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final messages = _messages(context);
+    final iconSize = widget.isFirstLaunch ? 58.0 : 42.0;
+    final boxSize = widget.isFirstLaunch ? 118.0 : 88.0;
+    final titleSize = widget.isFirstLaunch ? 34.0 : 30.0;
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -524,11 +584,11 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 118,
-                    height: 118,
+                    width: boxSize,
+                    height: boxSize,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(34),
+                      borderRadius: BorderRadius.circular(widget.isFirstLaunch ? 34 : 28),
                       boxShadow: [BoxShadow(color: const Color(0xFF111827).withOpacity(0.18), blurRadius: 30, offset: const Offset(0, 14))],
                     ),
                     child: AnimatedBuilder(
@@ -536,33 +596,37 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
                       builder: (context, child) {
                         final value = _iconController.value;
                         final scale = 0.94 + (value * 0.10);
-                        final angle = (value - 0.5) * 0.10;
+                        final angle = widget.isFirstLaunch ? (value - 0.5) * 0.10 : 0.0;
                         return Transform.rotate(
                           angle: angle,
                           child: Transform.scale(scale: scale, child: child),
                         );
                       },
-                      child: Icon(_splashIcon(_index), key: ValueKey<int>(_index), size: 58, color: const Color(0xFF111827)),
+                      child: Icon(_splashIcon(_index), key: ValueKey<int>(_index), size: iconSize, color: const Color(0xFF111827)),
                     ),
                   ),
-                  const SizedBox(height: 26),
-                  const Text('TickDay', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: Color(0xFF111827), letterSpacing: -0.8)),
                   const SizedBox(height: 24),
+                  Text('TickDay', style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.w800, color: const Color(0xFF111827), letterSpacing: -0.8)),
+                  const SizedBox(height: 20),
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
+                    duration: const Duration(milliseconds: 220),
                     transitionBuilder: (child, animation) => FadeTransition(
                       opacity: animation,
                       child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.14), end: Offset.zero).animate(animation), child: child),
                     ),
                     child: Text(
-                      messages[_index],
+                      messages[_index.clamp(0, messages.length - 1)],
                       key: ValueKey<int>(_index),
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w800, color: Color(0xFF374151)),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFF111827))),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: widget.isFirstLaunch ? 28 : 22,
+                    height: widget.isFirstLaunch ? 28 : 22,
+                    child: CircularProgressIndicator(strokeWidth: widget.isFirstLaunch ? 3 : 2.6, color: const Color(0xFF111827)),
+                  ),
                 ],
               ),
             ),
@@ -572,7 +636,6 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
     );
   }
 }
-
 
 class WidgetPreviewData {
   final String dday;
@@ -1188,6 +1251,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const _hideIntroKey = 'hide_intro_notice';
   static const _hideWidgetKey = 'hide_widget_notice';
   static const _trashItemsKey = 'dday_trash_items';
+  static const _appOpenCountKey = 'tickday_app_open_count';
+  static const _reviewPromptShownKey = 'tickday_review_prompt_shown';
+  static const _playStoreUrl = 'https://play.google.com/store/apps/details?id=com.forgeapps.tickday';
 
   final List<DdayItem> _items = [];
   final List<DdayItem> _trashItems = [];
@@ -1208,6 +1274,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Timer? _clockTimer;
   String? _pendingNotificationItemId;
+  bool _reviewPromptCheckedThisSession = false;
+  BannerAd? _bannerAd;
+  bool _isBannerAdReady = false;
+  static const String _testBannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
 
   @override
   void initState() {
@@ -1221,6 +1291,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _loadAll(rescheduleNotifications: true);
     _refreshPermissionStatus();
     _startClockTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_showFirstGuideIfNeeded());
+    });
+    _loadBannerAd();
   }
 
   @override
@@ -1231,6 +1305,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     WidgetDeepLinkService.dispose();
     WidgetsBinding.instance.removeObserver(this);
+    _bannerAd?.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -1249,12 +1324,300 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  void _loadBannerAd() {
+    final banner = BannerAd(
+      adUnitId: _testBannerAdUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
+          setState(() {
+            _bannerAd = ad as BannerAd;
+            _isBannerAdReady = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          if (!mounted) return;
+          setState(() {
+            _bannerAd = null;
+            _isBannerAdReady = false;
+          });
+        },
+      ),
+    );
+    banner.load();
+  }
+
   void _startClockTimer() {
     _clockTimer?.cancel();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
       _refreshNow();
     });
+  }
+
+  Future<void> _showFirstGuideIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadySeen = prefs.getBool(_firstGuideSeenPrefsKey) ?? false;
+    if (alreadySeen || !mounted) return;
+    await prefs.setBool(_firstGuideSeenPrefsKey, true);
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (!mounted) return;
+    _showFirstGuideDialog();
+  }
+
+  void _showFirstGuideDialog() {
+    final l = L.of(context);
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'first-guide',
+      barrierColor: Colors.black.withOpacity(0.38),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        Widget guideItem(IconData icon, String title, String subtitle) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(14)),
+                child: Icon(icon, size: 21, color: const Color(0xFF111827)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Color(0xFF111827))),
+                    const SizedBox(height: 3),
+                    Text(subtitle, style: const TextStyle(fontSize: 12.5, height: 1.35, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: math.min(MediaQuery.of(dialogContext).size.width - 36, 360),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.20), blurRadius: 30, offset: const Offset(0, 16))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(16)),
+                          child: const Icon(Icons.event_available_rounded, color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            l.pick(ko: 'TickDay 빠른 안내', en: 'Quick TickDay guide', ja: 'TickDay クイックガイド', vi: 'Hướng dẫn nhanh TickDay'),
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF111827), letterSpacing: -0.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    guideItem(
+                      Icons.add_rounded,
+                      l.pick(ko: '+ 버튼', en: '+ button', ja: '＋ボタン', vi: 'Nút +'),
+                      l.pick(ko: '새 일정을 직접 등록해요.', en: 'Add a new event manually.', ja: '新しい予定を直接追加できます。', vi: 'Thêm sự kiện mới thủ công.'),
+                    ),
+                    const SizedBox(height: 14),
+                    guideItem(
+                      Icons.bolt_rounded,
+                      l.pick(ko: '번개 버튼', en: 'Lightning button', ja: '稲妻ボタン', vi: 'Nút tia chớp'),
+                      l.pick(ko: '빠른 추가, 알림 확인, 위젯 추가를 한 번에 열어요.', en: 'Open quick add, notification check, and widgets.', ja: 'クイック追加、通知確認、ウィジェット追加を開けます。', vi: 'Mở thêm nhanh, kiểm tra thông báo và widget.'),
+                    ),
+                    const SizedBox(height: 14),
+                    guideItem(
+                      Icons.widgets_outlined,
+                      l.pick(ko: '홈 위젯', en: 'Home widget', ja: 'ホームウィジェット', vi: 'Widget màn hình chính'),
+                      l.pick(ko: '중요한 D-day를 홈 화면에서 바로 확인해요.', en: 'Check important D-days from your home screen.', ja: '大切なD-dayをホーム画面で確認できます。', vi: 'Xem D-day quan trọng ngay trên màn hình chính.'),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                        child: Text(l.pick(ko: '시작하기', en: 'Got it', ja: '始める', vi: 'Đã hiểu'), style: const TextStyle(fontWeight: FontWeight.w900)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: Text(l.pick(ko: '건너뛰기', en: 'Skip', ja: 'スキップ', vi: 'Bỏ qua'), style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6B7280))),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
+  Future<void> _maybeShowReviewPrompt() async {
+    if (_reviewPromptCheckedThisSession || !mounted) return;
+    _reviewPromptCheckedThisSession = true;
+
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyShown = prefs.getBool(_reviewPromptShownKey) ?? false;
+    final openCount = (prefs.getInt(_appOpenCountKey) ?? 0) + 1;
+    await prefs.setInt(_appOpenCountKey, openCount);
+
+    if (alreadyShown) return;
+    if (openCount < 3) return;
+    if (_items.length < 2) return;
+
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+
+    await prefs.setBool(_reviewPromptShownKey, true);
+    _showReviewPromptDialog();
+  }
+
+  Future<void> _openPlayStoreReviewPage() async {
+    final uri = Uri.parse(_playStoreUrl);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      // 리뷰 페이지 이동 실패 시 앱 기능에는 영향을 주지 않습니다.
+    }
+  }
+
+  void _showReviewPromptDialog() {
+    final l = L.of(context);
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'review-prompt',
+      barrierColor: Colors.black.withOpacity(0.38),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: math.min(MediaQuery.of(dialogContext).size.width - 36, 360),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.20), blurRadius: 30, offset: const Offset(0, 16))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                        style: IconButton.styleFrom(backgroundColor: const Color(0xFFF3F4F6)),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      l.pick(
+                        ko: 'TickDay가 도움이 되었나요?',
+                        en: 'Is TickDay helpful?',
+                        ja: 'TickDayは役に立っていますか？',
+                        vi: 'TickDay có hữu ích không?',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 21, height: 1.25, fontWeight: FontWeight.w900, color: Color(0xFF111827), letterSpacing: -0.5),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      l.pick(
+                        ko: '소중한 리뷰는 더 좋은 앱을 만드는 데 큰 힘이 됩니다.',
+                        en: 'Your review helps us make the app better.',
+                        ja: 'レビューはより良いアプリ作りの大きな力になります。',
+                        vi: 'Đánh giá của bạn giúp chúng tôi cải thiện ứng dụng.',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 14.5, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        5,
+                        (index) => const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 3),
+                          child: Icon(Icons.star_rounded, color: Color(0xFFFBBF24), size: 34),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () async {
+                          Navigator.of(dialogContext).pop();
+                          await _openPlayStoreReviewPage();
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                        child: Text(
+                          l.pick(ko: '리뷰 남기기', en: 'Leave a review', ja: 'レビューを書く', vi: 'Đánh giá ứng dụng'),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: Text(
+                        l.pick(ko: '나중에', en: 'Later', ja: '後で', vi: 'Để sau'),
+                        style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6B7280)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _refreshNow() {
@@ -1309,7 +1672,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     }
 
-    if (targetItem == null) return;
+    if (targetItem == null) {
+      _pendingNotificationItemId = null;
+      // 이미 휴지통에서 완전 삭제된 일정의 위젯/알림 딥링크가 남아 있어도
+      // 휴지통 복구나 Undo가 다시 살아나지 않도록 여기서 종료합니다.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).clearSnackBars();
+        _showInfoSnack(L.of(context).pick(
+          ko: '이미 삭제된 일정이에요.',
+          en: 'This event has already been deleted.',
+          ja: 'この予定はすでに削除されています。',
+          vi: 'Sự kiện này đã bị xóa.',
+        ));
+      });
+      return;
+    }
+
     _pendingNotificationItemId = null;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1471,6 +1850,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await _rescheduleAllNotifications();
       await _scheduleTodaySummaryNotification();
     }
+
+    unawaited(_maybeShowReviewPrompt());
   }
 
   Future<void> _saveItems() async {
@@ -1481,6 +1862,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _saveTrashItems() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_trashItemsKey, _trashItems.map((e) => jsonEncode(e.toJson())).toList());
+  }
+
+  Future<void> _markWidgetItemsPermanentlyDeleted(Iterable<String> itemIds) async {
+    final idsToAdd = itemIds.where((id) => id.trim().isNotEmpty).toSet();
+    if (idsToAdd.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getStringList(_permanentlyDeletedWidgetIdsKey) ?? <String>[];
+    final merged = <String>{...existing, ...idsToAdd}.toList();
+
+    await prefs.setStringList(_permanentlyDeletedWidgetIdsKey, merged);
+
+    // Android 홈 위젯 Provider가 삭제된 일정 ID를 알 수 있도록 HomeWidget 저장소에도 기록합니다.
+    // 기존 위젯 박스는 Android 정책상 앱이 강제로 제거할 수 없으므로,
+    // 해당 위젯은 "일정을 선택하세요" 상태로 안전하게 초기화됩니다.
+    await HomeWidget.saveWidgetData<String>('widget_deleted_item_ids', jsonEncode(merged));
+    await HomeWidget.updateWidget(androidName: 'DdayWidgetProvider');
   }
 
 
@@ -1495,18 +1893,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final upcoming = List<DdayItem>.from(_items)
       ..sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
 
-    // 위젯은 사용자가 마지막으로 저장/수정한 일정을 우선 표시합니다.
-    // 이전에는 가장 가까운 일정만 자동 선택해서, 예전 일정(예: 결혼기념일)이 계속 보이는 것처럼 느껴질 수 있었습니다.
-    final pinnedId = _widgetPinnedItemId;
-    if (pinnedId != null && pinnedId.isNotEmpty) {
-      final pinnedIndex = upcoming.indexWhere((item) => item.id == pinnedId);
-      if (pinnedIndex >= 0) {
-        final pinned = upcoming.removeAt(pinnedIndex);
-        upcoming.insert(0, pinned);
-      }
-    }
-
     return upcoming.take(count).toList();
+  }
+
+  DdayItem? _pinnedWidgetItem() {
+    final pinnedId = _widgetPinnedItemId;
+    if (pinnedId == null || pinnedId.isEmpty) return null;
+    for (final item in _items) {
+      if (item.id == pinnedId) return item;
+    }
+    return null;
+  }
+
+  DdayItem? _smallWidgetItem() {
+    // Small widget default is always the nearest upcoming event.
+    // Card-specific widget additions are stored as a per-widget pending snapshot
+    // so multiple 1x1 widgets can each keep different events.
+    return _nearestWidgetItem();
   }
 
   String _widgetRemainText(DdayItem item) {
@@ -1523,7 +1926,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _updateHomeWidget() async {
     try {
       final widgetItems = _nearestWidgetItems(2);
-      final item = widgetItems.isEmpty ? null : widgetItems.first;
+      final item = _smallWidgetItem();
 
       if (item == null) {
         await HomeWidget.saveWidgetData<String>('widget_item_id', '');
@@ -1601,6 +2004,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await HomeWidget.saveWidgetData<String>('${prefix}lang', Localizations.localeOf(context).languageCode);
   }
 
+  Future<void> _savePendingSmallWidgetItem(DdayItem? item) async {
+    if (item == null) {
+      await HomeWidget.saveWidgetData<String>('widget_pending_item_id', '');
+      await HomeWidget.saveWidgetData<String>('widget_pending_dday', 'D-Day');
+      await HomeWidget.saveWidgetData<String>('widget_pending_title', L.of(context).pick(ko: '일정을 등록하세요', en: 'Add an event', ja: '予定を追加してください', vi: 'Thêm sự kiện'));
+      await HomeWidget.saveWidgetData<String>('widget_pending_remain', 'TickDay');
+      await HomeWidget.saveWidgetData<int>('widget_pending_color', const Color(0xFF111827).value);
+      await HomeWidget.saveWidgetData<int>('widget_pending_target_millis', 0);
+      await HomeWidget.saveWidgetData<String>('widget_pending_repeat_type', 'none');
+      await HomeWidget.saveWidgetData<int>('widget_pending_month', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_day', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_hour', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_minute', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_created_millis', 0);
+      await HomeWidget.saveWidgetData<String>('widget_pending_lang', Localizations.localeOf(context).languageCode);
+      return;
+    }
+
+    final target = _effectiveTarget(item);
+    await HomeWidget.saveWidgetData<String>('widget_pending_item_id', item.id);
+    await HomeWidget.saveWidgetData<String>('widget_pending_dday', _dDayText(item));
+    await HomeWidget.saveWidgetData<String>('widget_pending_title', item.title);
+    await HomeWidget.saveWidgetData<String>('widget_pending_remain', _widgetRemainText(item));
+    await HomeWidget.saveWidgetData<int>('widget_pending_color', item.colorValue);
+    await HomeWidget.saveWidgetData<int>('widget_pending_target_millis', target.millisecondsSinceEpoch);
+    await HomeWidget.saveWidgetData<String>('widget_pending_repeat_type', item.repeatType);
+    await HomeWidget.saveWidgetData<int>('widget_pending_month', item.targetDate.month);
+    await HomeWidget.saveWidgetData<int>('widget_pending_day', item.targetDate.day);
+    await HomeWidget.saveWidgetData<int>('widget_pending_hour', item.targetTime.hour);
+    await HomeWidget.saveWidgetData<int>('widget_pending_minute', item.targetTime.minute);
+    await HomeWidget.saveWidgetData<int>('widget_pending_created_millis', item.createdAt.millisecondsSinceEpoch);
+    await HomeWidget.saveWidgetData<String>('widget_pending_lang', Localizations.localeOf(context).languageCode);
+  }
+
   Future<void> _setNoticeHidden(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
@@ -1618,17 +2055,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       } else {
         _items.add(item);
       }
-      _widgetPinnedItemId = item.id;
       _sortItems();
     });
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_widgetPinnedItemIdKey, item.id);
-
     await _saveItems();
     await _updateHomeWidget();
-    await _scheduleNotifications(item);
-    await _scheduleTodaySummaryNotification();
+
+    // Release 빌드에서는 알림 예약/요약 예약이 기기 권한 상태에 따라 늦게 끝나거나
+    // 실패할 수 있습니다. 카드 저장과 첫 카드 축포가 알림 예약을 기다리다 씹히지 않게
+    // 백그라운드로 분리합니다.
+    unawaited(_scheduleNotifications(item));
+    unawaited(_scheduleTodaySummaryNotification());
   }
 
   DateTime _alarmTimeForTarget(DdayItem item, DateTime target) {
@@ -1801,7 +2238,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _deleteItem(DdayItem item) async {
-    await NotificationService.cancel(NotificationService.idFromString(item.id));
+    // Release 빌드에서 알림 취소가 먼저 실행되면 기기/권한 상태에 따라 삭제 UI가
+    // 늦거나 멈춘 것처럼 보일 수 있습니다. 먼저 화면과 저장소에서 제거하고,
+    // 알림 취소는 뒤에서 시도합니다.
     setState(() {
       _items.removeWhere((e) => e.id == item.id);
       _trashItems.removeWhere((e) => e.id == item.id);
@@ -1822,9 +2261,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _saveItems();
     await _saveTrashItems();
     await _updateHomeWidget();
-    await _scheduleTodaySummaryNotification();
+
+    unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    unawaited(_scheduleTodaySummaryNotification());
 
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(L.of(context).pick(ko: '휴지통으로 이동했어요.', en: 'Moved to trash.', ja: 'ゴミ箱に移動しました。', vi: 'Đã chuyển vào thùng rác.')),
@@ -1837,17 +2279,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreTrashItem(DdayItem item) async {
+    final canRestore = _trashItems.any((e) => e.id == item.id);
+    if (!canRestore) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      _showInfoSnack(L.of(context).pick(
+        ko: '이미 완전히 삭제된 일정이에요.',
+        en: 'This event was permanently deleted.',
+        ja: 'この予定は完全に削除されています。',
+        vi: 'Sự kiện này đã bị xóa vĩnh viễn.',
+      ));
+      return;
+    }
+
     setState(() {
       _trashItems.removeWhere((e) => e.id == item.id);
       if (!_items.any((e) => e.id == item.id)) {
         _items.add(item);
       }
-      _widgetPinnedItemId = item.id;
       _sortItems();
     });
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_widgetPinnedItemIdKey, item.id);
     await _saveItems();
     await _saveTrashItems();
     await _scheduleNotifications(item);
@@ -1863,15 +2315,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _trashItems.removeWhere((e) => e.id == item.id);
     });
     await _saveTrashItems();
+    await _markWidgetItemsPermanentlyDeleted([item.id]);
+    unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    unawaited(_scheduleTodaySummaryNotification());
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     _showInfoSnack(L.of(context).pick(ko: '완전히 삭제했어요.', en: 'Permanently deleted.', ja: '完全に削除しました。', vi: 'Đã xóa vĩnh viễn.'));
   }
 
   Future<void> _emptyTrash() async {
     if (_trashItems.isEmpty) return;
+    final deletedItems = List<DdayItem>.from(_trashItems);
     setState(() => _trashItems.clear());
     await _saveTrashItems();
+    await _markWidgetItemsPermanentlyDeleted(deletedItems.map((e) => e.id));
+    for (final item in deletedItems) {
+      unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    }
+    unawaited(_scheduleTodaySummaryNotification());
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     _showInfoSnack(L.of(context).pick(ko: '휴지통을 비웠어요.', en: 'Trash emptied.', ja: 'ゴミ箱を空にしました。', vi: 'Đã dọn thùng rác.'));
   }
 
@@ -2113,8 +2576,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showFirstCardCelebration() {
-    final overlay = Overlay.maybeOf(context);
-    if (overlay == null) return;
+    if (!mounted) return;
 
     final l = L.of(context);
     final messages = [
@@ -2139,14 +2601,45 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
     final message = messages[math.Random().nextInt(messages.length)];
 
-    late final OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (_) => _FirstCardCelebrationOverlay(
-        message: message,
-        onDone: () => entry.remove(),
-      ),
-    );
-    overlay.insert(entry);
+    Future<void>.delayed(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1800),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      final overlay = Overlay.maybeOf(context, rootOverlay: true) ?? Overlay.maybeOf(context);
+      if (overlay == null) return;
+
+      late final OverlayEntry entry;
+      entry = OverlayEntry(
+        builder: (_) => _FirstCardCelebrationOverlay(
+          message: message,
+          onDone: () {
+            if (entry.mounted) entry.remove();
+          },
+        ),
+      );
+
+      try {
+        overlay.insert(entry);
+      } catch (_) {
+        // 스낵바는 이미 표시했으므로 추가 처리 없음
+      }
+    });
+  }
+
+  void _confirmDeleteAfterClosingSheet(DdayItem item) {
+    // 휴지통 + 되돌리기가 있으므로 release 안정성을 위해 확인창을 거치지 않고 바로 이동합니다.
+    Future<void>.delayed(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      unawaited(_deleteItem(item));
+    });
   }
 
   void _showDetail(DdayItem item) {
@@ -2242,7 +2735,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           child: FilledButton(
                             onPressed: () {
                               Navigator.pop(context);
-                              _confirmDelete(item);
+                              _confirmDeleteAfterClosingSheet(item);
                             },
                             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF111827), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                             child: Text(L.of(context).delete, style: TextStyle(fontWeight: FontWeight.w700)),
@@ -2331,9 +2824,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 Navigator.pop(context);
                 _copyItem(item);
               }),
+              _menuTile(
+                Icons.widgets_outlined,
+                L.of(context).pick(ko: '홈 위젯에 추가', en: 'Add to home widget', ja: 'ホームウィジェットに追加', vi: 'Thêm vào widget'),
+                () {
+                  Navigator.pop(context);
+                  _requestPinHomeWidget(wide: false, pinnedItem: item);
+                },
+              ),
               _menuTile(Icons.delete_outline, L.of(context).delete, () {
                 Navigator.pop(context);
-                _confirmDelete(item);
+                _confirmDeleteAfterClosingSheet(item);
               }, danger: true),
             ],
           ),
@@ -2350,40 +2851,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _requestPinHomeWidget({required bool wide}) async {
+  Future<void> _requestPinHomeWidget({required bool wide, DdayItem? pinnedItem, bool useNearestForSmall = false}) async {
     final providerName = wide ? 'DdayWidgetProviderWide' : 'DdayWidgetProvider';
     final widgetLabel = wide ? L.of(context).pick(ko: '넓은 위젯(2개 표시)', en: 'Wide widget (2 events)', ja: '横長ウィジェット（2件）', vi: 'Widget rộng (2 sự kiện)') : L.of(context).pick(ko: '작은 위젯(1개 표시)', en: 'Small widget (1 event)', ja: '小さいウィジェット（1件）', vi: 'Widget nhỏ (1 sự kiện)');
 
-    await _updateHomeWidget();
+    if (wide) {
+      await _updateHomeWidget();
+    } else {
+      final itemToPin = pinnedItem ?? _nearestWidgetItem();
+      await _savePendingSmallWidgetItem(itemToPin);
+    }
+    if (!mounted) return;
 
-    bool supported = false;
+    bool requested = false;
+
+    // Release-safe path: call our native Android requestPinAppWidget directly first.
+    // The previous HomeWidget plugin path could fall back to the manual guide on release builds
+    // because the qualified provider name was still the old com.example.dday_app path.
     try {
-      supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+      requested = await WidgetDeepLinkService.requestPinHomeWidget(providerName) ?? false;
     } catch (_) {
-      supported = false;
+      requested = false;
+    }
+
+    // Fallback to the plugin with the real application package name.
+    if (!requested) {
+      try {
+        requested = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+        if (requested) {
+          await HomeWidget.requestPinWidget(
+            name: providerName,
+            androidName: providerName,
+            qualifiedAndroidName: 'com.forgeapps.tickday.$providerName',
+          );
+        }
+      } catch (_) {
+        requested = false;
+      }
     }
 
     if (!mounted) return;
 
-    if (!supported) {
-      await _showManualWidgetGuide(widgetLabel);
+    if (requested) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(L.of(context).pick(ko: '$widgetLabel 추가 창을 열었습니다.', en: '$widgetLabel add screen opened.', ja: '$widgetLabel の追加画面を開きました。', vi: 'Đã mở màn hình thêm $widgetLabel.'))),
+      );
       return;
     }
 
-    try {
-      await HomeWidget.requestPinWidget(
-        name: providerName,
-        androidName: providerName,
-        qualifiedAndroidName: 'com.example.dday_app.$providerName',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(L.of(context).pick(ko: '$widgetLabel 추가 요청을 보냈습니다. 홈 화면에서 확인해보세요.', en: '$widgetLabel add request sent. Check your home screen.', ja: '$widgetLabel の追加リクエストを送信しました。ホーム画面を確認してください。', vi: 'Đã gửi yêu cầu thêm $widgetLabel. Hãy kiểm tra màn hình chính.'))),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      await _showManualWidgetGuide(widgetLabel);
-    }
+    await _showManualWidgetGuide(widgetLabel);
   }
 
   Future<void> _showManualWidgetGuide(String widgetLabel) async {
@@ -2459,7 +2975,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => WidgetPreviewPage(
           items: previewItems,
-          onAddSmall: () => _requestPinHomeWidget(wide: false),
+          onAddSmall: () => _requestPinHomeWidget(wide: false, useNearestForSmall: true),
           onAddWide: () => _requestPinHomeWidget(wide: true),
         ),
       ),
@@ -2534,11 +3050,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   _drawerTile(Icons.widgets_rounded, l.pick(ko: '홈 위젯 추가', en: 'Add home widget', ja: 'ホームウィジェット追加', vi: 'Thêm widget'), () { Navigator.pop(context); _showWidgetPlanSheet(); }),
                   _drawerTile(Icons.notifications_active_rounded, l.pick(ko: '알림 설정', en: 'Reminder settings', ja: '通知設定', vi: 'Cài đặt nhắc nhở'), () { Navigator.pop(context); _showGlobalReminderSettingsSheet(); }),
                   _drawerTile(Icons.language_rounded, l.pick(ko: '언어 설정', en: 'Language', ja: '言語設定', vi: 'Ngôn ngữ'), () { Navigator.pop(context); _showLanguageSheet(); }, trailingText: _languageName(currentCode)),
-                  _drawerTile(Icons.palette_rounded, l.pick(ko: '테마 설정', en: 'Theme', ja: 'テーマ', vi: 'Giao diện'), () { Navigator.pop(context); _showThemeComingSoon(); }),
+                  _drawerTile(
+                    Icons.palette_rounded,
+                    l.pick(ko: '테마 설정', en: 'Theme', ja: 'テーマ', vi: 'Giao diện'),
+                    null,
+                    disabled: true,
+                    trailingText: l.pick(ko: '준비중', en: 'Soon', ja: '準備中', vi: 'Sắp có'),
+                  ),
                   _drawerTile(Icons.delete_outline_rounded, l.pick(ko: '휴지통', en: 'Trash', ja: 'ゴミ箱', vi: 'Thùng rác'), () { Navigator.pop(context); _openTrashPage(); }, trailingText: _trashItems.isEmpty ? null : '${_trashItems.length}'),
                   const Padding(padding: EdgeInsets.symmetric(horizontal: 18, vertical: 8), child: Divider(height: 1)),
-                  _drawerTile(Icons.privacy_tip_outlined, l.pick(ko: '개인정보 처리방침', en: 'Privacy policy', ja: 'プライバシーポリシー', vi: 'Chính sách bảo mật'), () { Navigator.pop(context); Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _LegalPage(type: 'privacy'))); }),
-                  _drawerTile(Icons.description_outlined, l.pick(ko: '이용약관', en: 'Terms of use', ja: '利用規約', vi: 'Điều khoản sử dụng'), () { Navigator.pop(context); Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _LegalPage(type: 'terms'))); }),
+                  _drawerTile(Icons.privacy_tip_outlined, l.pick(ko: '개인정보 처리방침', en: 'Privacy policy', ja: 'プライバシーポリシー', vi: 'Chính sách bảo mật'), () { Navigator.pop(context); _openExternalUrl(_privacyPolicyUrl, fallbackType: 'privacy'); }),
+                  _drawerTile(Icons.description_outlined, l.pick(ko: '이용약관', en: 'Terms of use', ja: '利用規約', vi: 'Điều khoản sử dụng'), () { Navigator.pop(context); _openExternalUrl(_termsOfUseUrl, fallbackType: 'terms'); }),
                   _drawerTile(Icons.info_outline_rounded, l.pick(ko: '앱 정보', en: 'App info', ja: 'アプリ情報', vi: 'Thông tin ứng dụng'), () { Navigator.pop(context); _showAppInfoSheet(); }),
                 ],
               ),
@@ -2553,8 +3075,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _drawerTile(IconData icon, String title, VoidCallback onTap, {bool selected = false, String? trailingText}) {
-    final color = selected ? const Color(0xFF111827) : const Color(0xFF111827);
+  Widget _drawerTile(IconData icon, String title, VoidCallback? onTap, {bool selected = false, bool disabled = false, String? trailingText}) {
+    final color = disabled ? const Color(0xFF9CA3AF) : const Color(0xFF111827);
+    final trailingColor = disabled ? const Color(0xFFB0B7C3) : const Color(0xFF6B7280);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Material(
@@ -2562,7 +3085,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
+          onTap: disabled ? null : onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
@@ -2570,7 +3093,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 Icon(icon, color: color, size: 22),
                 const SizedBox(width: 14),
                 Expanded(child: Text(title, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: color))),
-                if (trailingText != null) Text(trailingText, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF6B7280))),
+                if (trailingText != null) Text(trailingText, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: trailingColor)),
               ],
             ),
           ),
@@ -2954,6 +3477,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await Future<void>.delayed(const Duration(milliseconds: 120));
     if (!mounted) return;
     _refreshNow();
+  }
+
+  Future<void> _openExternalUrl(String url, {required String fallbackType}) async {
+    final uri = Uri.parse(url);
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (opened || !mounted) return;
+    } catch (_) {
+      if (!mounted) return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => _LegalPage(type: fallbackType)));
   }
 
   void _showThemeComingSoon() {
@@ -3369,6 +3903,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: const Icon(Icons.add, size: 25),
           ),
         ),
+        bottomNavigationBar: (_isBannerAdReady && _bannerAd != null)
+            ? SafeArea(
+                top: false,
+                child: Container(
+                  alignment: Alignment.center,
+                  width: double.infinity,
+                  height: _bannerAd!.size.height.toDouble(),
+                  color: Colors.white,
+                  child: AdWidget(ad: _bannerAd!),
+                ),
+              )
+            : null,
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async {
@@ -4547,7 +5093,14 @@ class _TrashPageState extends State<TrashPage> {
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(l.pick(ko: '휴지통을 비울까요?', en: 'Empty trash?', ja: 'ゴミ箱を空にしますか？', vi: 'Dọn thùng rác?')),
-        content: Text(l.pick(ko: '모든 삭제된 일정이 완전히 삭제됩니다.', en: 'All deleted events will be removed forever.', ja: '削除された予定がすべて完全に削除されます。', vi: 'Tất cả sự kiện đã xóa sẽ bị xóa vĩnh viễn.')),
+        content: Text(
+	  l.pick(
+	    ko: '휴지통에 있는 모든 일정이 영구 삭제됩니다.',
+	    en: 'All events in the trash will be permanently deleted.',
+	    ja: 'ゴミ箱内のすべての予定が完全に削除されます。',
+	    vi: 'Tất cả sự kiện trong thùng rác sẽ bị xóa vĩnh viễn.',
+	  ),
+	),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l.cancel)),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(l.pick(ko: '비우기', en: 'Empty', ja: '空にする', vi: 'Dọn'))),
