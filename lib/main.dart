@@ -166,6 +166,20 @@ class NotificationService {
 
   static const NotificationDetails _details = NotificationDetails(android: _androidDetails);
 
+  // ⚠️ 풀스크린 알림 테스트용 (1차 안전버전, 아직 실제 스케줄에 연결 안 함)
+  static const AndroidNotificationDetails _androidDetailsFullScreen = AndroidNotificationDetails(
+    'dday_alarm_fullscreen_channel',
+    'D-day Full-Screen Reminder',
+    channelDescription: 'TickDay full-screen event reminder notifications (test only).',
+    importance: Importance.max,
+    priority: Priority.high,
+    playSound: true,
+    enableVibration: true,
+    fullScreenIntent: true,  // 핵심: 풀스크린 모드 활성화
+  );
+
+  static const NotificationDetails _detailsFullScreen = NotificationDetails(android: _androidDetailsFullScreen);
+
   static Future<void> init() async {
     tzdata.initializeTimeZones();
     try {
@@ -294,8 +308,190 @@ class NotificationService {
   }
 
   static Future<void> cancel(int id) async => _plugin.cancel(id);
+
+  // ⚠️ 테스트용 풀스크린 알림 (1차 안전버전)
+  // 기존 schedule(), showNow() 등은 변경 없음
+  static Future<void> showFullScreenNow({
+    int id = 999888,
+    String title = 'Full-Screen Test',
+    String body = 'This is a full-screen notification test.',
+    String? payload,
+  }) async {
+    try {
+      await _plugin.show(
+        id,
+        title,
+        body,
+        _detailsFullScreen,
+        payload: payload ?? '__fullscreen_test__',
+      );
+    } catch (_) {
+      // 실패해도 기존 앱 기능에 영향 없음
+    }
+  }
 }
 
+
+// ⚠️ 풀스크린 알림용 OverlayEntry 기반 UI (1차 안전버전, 테스트 전용)
+// 실제 스케줄 알림과는 아직 연결 안 함
+class FullScreenNotificationOverlay {
+  static OverlayEntry? _currentEntry;
+
+  static void show({
+    required String title,
+    required String body,
+    Duration dismissDuration = const Duration(seconds: 5),
+  }) {
+    _currentEntry?.remove();
+    _currentEntry = null;
+
+    _currentEntry = OverlayEntry(
+      builder: (context) => _FullScreenNotificationWidget(
+        title: title,
+        body: body,
+        onDismiss: dismiss,
+      ),
+    );
+
+    // 상위 context의 Overlay에 추가
+    try {
+      Overlay.of(_getGlobalContext()).insert(_currentEntry!);
+      Future.delayed(dismissDuration, dismiss);
+    } catch (_) {
+      _currentEntry = null;
+    }
+  }
+
+  static void dismiss() {
+    _currentEntry?.remove();
+    _currentEntry = null;
+  }
+
+  static BuildContext? _lastContext;
+
+  static void setContext(BuildContext context) {
+    _lastContext = context;
+  }
+
+  static BuildContext _getGlobalContext() {
+    if (_lastContext != null) return _lastContext!;
+    throw Exception('FullScreenNotificationOverlay context not set');
+  }
+}
+
+class _FullScreenNotificationWidget extends StatefulWidget {
+  final String title;
+  final String body;
+  final VoidCallback onDismiss;
+
+  const _FullScreenNotificationWidget({
+    required this.title,
+    required this.body,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_FullScreenNotificationWidget> createState() => _FullScreenNotificationWidgetState();
+}
+
+class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SafeArea(
+        child: Center(
+          child: GestureDetector(
+            onTap: widget.onDismiss,
+            child: Container(
+              width: double.infinity,
+              height: double.infinity,
+              color: Colors.black.withOpacity(0.85),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2563EB).withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.notifications_active_rounded,
+                      color: Color(0xFF2563EB),
+                      size: 40,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: Text(
+                      widget.body,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        height: 1.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFD1D5DB),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  Text(
+                    '(tap anywhere to dismiss)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withOpacity(0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class WidgetDeepLinkService {
   WidgetDeepLinkService._();
@@ -1631,6 +1827,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _handleNotificationPayload(String payload) {
     if (payload.isEmpty || payload == '__test__') return;
+    // ⚠️ 풀스크린 알림 플래그 감지 (1차 안전버전, 테스트용)
+    if (payload == '__fullscreen_test__') {
+      FullScreenNotificationOverlay.setContext(context);
+      FullScreenNotificationOverlay.show(
+        title: '풀스크린 알림 테스트',
+        body: 'Flutter 내부 OverlayEntry로 표시됩니다.',
+        dismissDuration: const Duration(seconds: 5),
+      );
+      return;
+    }
     if (payload == '__today_summary__') {
       // 오늘 일정 요약 알림은 특정 카드가 아니라 앱 홈 화면으로 들어오게만 합니다.
       _pendingNotificationItemId = null;
@@ -3560,6 +3766,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  // ⚠️ 풀스크린 알림 테스트 (1차 안전버전)
+  Future<void> _sendFullScreenNotificationTest() async {
+    NotificationService.showFullScreenNow(
+      title: L.of(context).pick(
+        ko: '풀스크린 알림 테스트',
+        en: 'Full-Screen Test',
+        ja: 'フルスクリーン通知テスト',
+        vi: 'Kiểm tra toàn màn hình',
+      ),
+      body: L.of(context).pick(
+        ko: 'TickDay 풀스크린 알림이 작동하는지 확인합니다.',
+        en: 'Checking if full-screen notifications work.',
+        ja: 'フルスクリーン通知の動作確認中です。',
+        vi: 'Đang kiểm tra thông báo toàn màn hình.',
+      ),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(L.of(context).pick(
+        ko: '풀스크린 알림 테스트 요청 완료. 플러그인이 앱을 열 때 OverlayEntry가 표시됩니다.',
+        en: 'Full-screen test sent. Overlay will show when notification arrives.',
+        ja: 'フルスクリーンテストを送信しました。通知到着時にOverlayが表示されます。',
+        vi: 'Đã gửi kiểm tra toàn màn hình. Overlay sẽ hiển thị khi thông báo đến.',
+      ))),
+    );
+  }
+
   void _showAppMenu() {
     showGeneralDialog<void>(
       context: context,
@@ -3617,6 +3850,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               await _sendQuickNotificationTest();
                             },
                           ),
+                          const SizedBox(height: 6),
+                          // ⚠️ 풀스크린 알림 테스트 메뉴 (1차 안전버전)
+                          _quickMenuTile(
+                            icon: Icons.fullscreen_rounded,
+                            title: L.of(context).pick(ko: '풀스크린 테스트 (테스트용)', en: 'Full-Screen Test', ja: 'フルスクリーンテスト', vi: 'Kiểm tra toàn màn hình'),
+                            subtitle: L.of(context).pick(ko: 'OverlayEntry 풀스크린 테스트', en: 'Test full-screen overlay', ja: 'Overlay表示テスト', vi: 'Kiểm tra Overlay'),
+                            onTap: () async {
+                              Navigator.of(dialogContext).pop();
+                              await _sendFullScreenNotificationTest();
+                            },
+                          ),
+                          const SizedBox(height: 6),
                           _quickMenuTile(
                             icon: Icons.schedule_rounded,
                             title: L.of(context).pick(ko: '오늘 요약 설정', en: 'Today summary settings', ja: '今日のまとめ設定', vi: 'Cài đặt tóm tắt hôm nay'),
