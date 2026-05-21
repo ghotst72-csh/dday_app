@@ -350,6 +350,8 @@ class NotificationService {
 // 실제 스케줄 알림과는 아직 연결 안 함
 class FullScreenNotificationOverlay {
   static OverlayEntry? _currentEntry;
+  // When true, opening pending notification items should be suppressed.
+  static bool _suppressPendingOpen = false;
 
   static void show({
     required String title,
@@ -377,8 +379,14 @@ class FullScreenNotificationOverlay {
   }
 
   static void dismiss() {
+    // Suppress pending-item handling for a short window to avoid
+    // side-effects (navigation/snackbars) triggered by dismissal.
+    _suppressPendingOpen = true;
     _currentEntry?.remove();
     _currentEntry = null;
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _suppressPendingOpen = false;
+    });
   }
 
   static BuildContext? _lastContext;
@@ -438,8 +446,8 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
 
   @override
   Widget build(BuildContext context) {
-    final isTestOverlay = widget.title == '풀스크린 알림 테스트' &&
-        widget.body == 'Flutter 내부 OverlayEntry로 표시됩니다.';
+    final titleText = '알림 미리보기';
+    final descriptionText = '오늘의 중요한 일정을 놓치지 마세요';
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -505,47 +513,42 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                                 'D-0',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
+                                  decoration: TextDecoration.none,
                                   fontSize: 64,
                                   fontWeight: FontWeight.w900,
                                   color: Colors.white,
                                   letterSpacing: -1.6,
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              if (!isTestOverlay) ...[
+                              const SizedBox(height: 16),
+                              if (titleText.isNotEmpty) ...[
                                 Text(
-                                  widget.title,
+                                  titleText,
                                   textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
+                                    decoration: TextDecoration.none,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
                                     color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 14),
+                                const SizedBox(height: 12),
                               ],
-                              const Text(
-                                '오늘 놓치면 다시 돌아오지 않아요',
+                              const SizedBox(height: 0),
+                              Text(
+                                descriptionText,
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
+                                style: const TextStyle(
+                                  decoration: TextDecoration.none,
                                   fontSize: 15,
                                   height: 1.6,
                                   fontWeight: FontWeight.w500,
                                   color: Color(0xFFBAC8FF),
                                 ),
                               ),
-                              if (!isTestOverlay && widget.body.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                Text(
-                                  widget.body,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    height: 1.6,
-                                    color: Color(0xFFCBD5E1),
-                                  ),
-                                ),
-                              ],
+                              // No additional body text (remove developer test strings)
                               const SizedBox(height: 26),
                               Row(
                                 children: [
@@ -563,14 +566,21 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                                       ),
                                       child: const Text(
                                         '확인하기',
-                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                        style: TextStyle(
+                                          decoration: TextDecoration.none,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
                                   ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: widget.onDismiss,
+                                  onPressed: () {
+                                    // Only remove the overlay; do not navigate into the app.
+                                    FullScreenNotificationOverlay.dismiss();
+                                  },
                                   style: OutlinedButton.styleFrom(
                                     side: BorderSide(color: Colors.white.withOpacity(0.18)),
                                     shape: RoundedRectangleBorder(
@@ -581,6 +591,7 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                                   child: const Text(
                                     '닫기',
                                     style: TextStyle(
+                                      decoration: TextDecoration.none,
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                       color: Colors.white,
@@ -1942,8 +1953,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (payload == '__fullscreen_test__' || payload == '__fullscreen_auto__') {
       FullScreenNotificationOverlay.setContext(context);
       FullScreenNotificationOverlay.show(
-        title: '풀스크린 알림 테스트',
-        body: 'Flutter 내부 OverlayEntry로 표시됩니다.',
+        title: '알림 미리보기',
+        body: '',
         dismissDuration: const Duration(seconds: 5),
       );
       return;
@@ -1977,6 +1988,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _openPendingNotificationItem() {
+    // If overlay was just dismissed, skip opening pending items to avoid
+    // unwanted navigation or snackbars.
+    if (FullScreenNotificationOverlay._suppressPendingOpen) {
+      _pendingNotificationItemId = null;
+      return;
+    }
+
     final id = _pendingNotificationItemId;
     if (id == null || id.isEmpty || !mounted) return;
 
@@ -3903,8 +3921,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(L.of(context).pick(
         ko: scheduledOk
-            ? '풀스크린 알림 예약 완료. 10초 후에 OverlayEntry가 표시됩니다.'
-            : '풀스크린 알림 예약에 실패했습니다.',
+          ? '알림 예약 완료\n10초 후 전체 화면 알림이 표시됩니다'
+          : '풀스크린 알림 예약에 실패했습니다.',
         en: scheduledOk
             ? 'Full-screen notification scheduled. Overlay will show in 10 seconds.'
             : 'Failed to schedule full-screen notification.',
@@ -3979,8 +3997,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           // ⚠️ 풀스크린 알림 테스트 메뉴 (1차 안전버전)
                           _quickMenuTile(
                             icon: Icons.fullscreen_rounded,
-                            title: L.of(context).pick(ko: '풀스크린 테스트 (테스트용)', en: 'Full-Screen Test', ja: 'フルスクリーンテスト', vi: 'Kiểm tra toàn màn hình'),
-                            subtitle: L.of(context).pick(ko: 'OverlayEntry 풀스크린 테스트', en: 'Test full-screen overlay', ja: 'Overlay表示テスト', vi: 'Kiểm tra Overlay'),
+                            title: L.of(context).pick(ko: '알림 미리보기', en: 'Full-Screen Test', ja: 'フルスクリーンテスト', vi: 'Kiểm tra toàn màn hình'),
+                            subtitle: L.of(context).pick(ko: '전체 화면 알림 미리 체험', en: 'Test full-screen overlay', ja: 'Overlay表示テスト', vi: 'Kiểm tra Overlay'),
                             onTap: () async {
                               Navigator.of(dialogContext).pop();
                               await _sendFullScreenNotificationTest();
