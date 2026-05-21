@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -173,6 +174,7 @@ class NotificationService {
     channelDescription: 'TickDay full-screen event reminder notifications (test only).',
     importance: Importance.max,
     priority: Priority.high,
+    category: AndroidNotificationCategory.alarm,
     playSound: true,
     enableVibration: true,
     fullScreenIntent: true,  // 핵심: 풀스크린 모드 활성화
@@ -212,6 +214,7 @@ class NotificationService {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.requestNotificationsPermission();
     await androidPlugin?.requestExactAlarmsPermission();
+    await androidPlugin?.requestFullScreenIntentPermission();
   }
 
   static Future<bool> areNotificationsEnabled() async {
@@ -237,9 +240,18 @@ class NotificationService {
     await androidPlugin?.requestNotificationsPermission();
   }
 
-  static Future<void> requestExactAlarmPermission() async {
+  static Future<bool> requestExactAlarmPermission() async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestExactAlarmsPermission();
+    return await androidPlugin?.requestExactAlarmsPermission() ?? false;
+  }
+
+  static Future<bool> requestFullScreenIntentPermission() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    try {
+      return await androidPlugin?.requestFullScreenIntentPermission() ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static int idFromString(String id) {
@@ -263,6 +275,7 @@ class NotificationService {
     required String body,
     required DateTime scheduledAt,
     String? payload,
+    bool fullScreen = false,
   }) async {
     if (!scheduledAt.isAfter(DateTime.now())) return false;
 
@@ -271,6 +284,7 @@ class NotificationService {
     await _plugin.cancel(id);
 
     final scheduled = tz.TZDateTime.from(scheduledAt, tz.local);
+    final details = fullScreen ? _detailsFullScreen : _details;
 
     try {
       await _plugin.zonedSchedule(
@@ -278,7 +292,7 @@ class NotificationService {
         title,
         body,
         scheduled,
-        _details,
+        details,
         payload: payload,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
@@ -293,7 +307,7 @@ class NotificationService {
           title,
           body,
           scheduled,
-          _details,
+          details,
           payload: payload,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
@@ -398,16 +412,20 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 320),
       vsync: this,
     );
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _scaleAnimation = Tween<double>(begin: 0.92, end: 1).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack),
     );
     _animationController.forward();
   }
@@ -420,72 +438,165 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
 
   @override
   Widget build(BuildContext context) {
+    final isTestOverlay = widget.title == '풀스크린 알림 테스트' &&
+        widget.body == 'Flutter 내부 OverlayEntry로 표시됩니다.';
+
     return FadeTransition(
       opacity: _fadeAnimation,
-      child: SafeArea(
-        child: Center(
-          child: GestureDetector(
-            onTap: widget.onDismiss,
-            child: Container(
-              width: double.infinity,
-              height: double.infinity,
-              color: Colors.black.withOpacity(0.85),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2563EB).withOpacity(0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.notifications_active_rounded,
-                      color: Color(0xFF2563EB),
-                      size: 40,
-                    ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    color: Colors.black.withOpacity(0.60),
                   ),
-                  const SizedBox(height: 30),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Text(
-                      widget.title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: Text(
-                      widget.body,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        height: 1.5,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFD1D5DB),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  Text(
-                    '(tap anywhere to dismiss)',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white.withOpacity(0.5),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+              Center(
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 360),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF101828),
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.55),
+                            blurRadius: 42,
+                            offset: const Offset(0, 20),
+                          ),
+                        ],
+                        border: Border.all(color: Colors.white.withOpacity(0.10), width: 1),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(26, 26, 26, 26),
+                      child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.08),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.white.withOpacity(0.08),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 12),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.alarm,
+                                  color: Color(0xFF60A5FA),
+                                  size: 34,
+                                ),
+                              ),
+                              const SizedBox(height: 22),
+                              const Text(
+                                'D-0',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 64,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                  letterSpacing: -1.6,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              if (!isTestOverlay) ...[
+                                Text(
+                                  widget.title,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              const Text(
+                                '오늘 놓치면 다시 돌아오지 않아요',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  height: 1.6,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFFBAC8FF),
+                                ),
+                              ),
+                              if (!isTestOverlay && widget.body.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  widget.body,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    height: 1.6,
+                                    color: Color(0xFFCBD5E1),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 26),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: widget.onDismiss,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF7C3AED),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        elevation: 0,
+                                      ),
+                                      child: const Text(
+                                        '확인하기',
+                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: widget.onDismiss,
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(color: Colors.white.withOpacity(0.18)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                  ),
+                                  child: const Text(
+                                    '닫기',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1828,7 +1939,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _handleNotificationPayload(String payload) {
     if (payload.isEmpty || payload == '__test__') return;
     // ⚠️ 풀스크린 알림 플래그 감지 (1차 안전버전, 테스트용)
-    if (payload == '__fullscreen_test__') {
+    if (payload == '__fullscreen_test__' || payload == '__fullscreen_auto__') {
       FullScreenNotificationOverlay.setContext(context);
       FullScreenNotificationOverlay.show(
         title: '풀스크린 알림 테스트',
@@ -3768,7 +3879,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   // ⚠️ 풀스크린 알림 테스트 (1차 안전버전)
   Future<void> _sendFullScreenNotificationTest() async {
-    NotificationService.showFullScreenNow(
+    final scheduledAt = DateTime.now().add(const Duration(seconds: 10));
+    final scheduledOk = await NotificationService.schedule(
+      id: 999889,
       title: L.of(context).pick(
         ko: '풀스크린 알림 테스트',
         en: 'Full-Screen Test',
@@ -3781,14 +3894,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ja: 'フルスクリーン通知の動作確認中です。',
         vi: 'Đang kiểm tra thông báo toàn màn hình.',
       ),
+      scheduledAt: scheduledAt,
+      payload: '__fullscreen_auto__',
+      fullScreen: true,
     );
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(L.of(context).pick(
-        ko: '풀스크린 알림 테스트 요청 완료. 플러그인이 앱을 열 때 OverlayEntry가 표시됩니다.',
-        en: 'Full-screen test sent. Overlay will show when notification arrives.',
-        ja: 'フルスクリーンテストを送信しました。通知到着時にOverlayが表示されます。',
-        vi: 'Đã gửi kiểm tra toàn màn hình. Overlay sẽ hiển thị khi thông báo đến.',
+        ko: scheduledOk
+            ? '풀스크린 알림 예약 완료. 10초 후에 OverlayEntry가 표시됩니다.'
+            : '풀스크린 알림 예약에 실패했습니다.',
+        en: scheduledOk
+            ? 'Full-screen notification scheduled. Overlay will show in 10 seconds.'
+            : 'Failed to schedule full-screen notification.',
+        ja: scheduledOk
+            ? 'フルスクリーン通知を予約しました。10秒後にOverlayが表示されます。'
+            : 'フルスクリーン通知の予約に失敗しました。',
+        vi: scheduledOk
+            ? 'Đã lên lịch thông báo toàn màn hình. Overlay sẽ hiển thị sau 10 giây.'
+            : 'Lên lịch thông báo toàn màn hình không thành công.',
       ))),
     );
   }
