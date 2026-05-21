@@ -350,13 +350,13 @@ class NotificationService {
 // 실제 스케줄 알림과는 아직 연결 안 함
 class FullScreenNotificationOverlay {
   static OverlayEntry? _currentEntry;
-  // When true, opening pending notification items should be suppressed.
-  static bool _suppressPendingOpen = false;
 
   static void show({
     required String title,
     required String body,
     Duration dismissDuration = const Duration(seconds: 5),
+    VoidCallback? onConfirm,
+    VoidCallback? onClose,
   }) {
     _currentEntry?.remove();
     _currentEntry = null;
@@ -365,7 +365,8 @@ class FullScreenNotificationOverlay {
       builder: (context) => _FullScreenNotificationWidget(
         title: title,
         body: body,
-        onDismiss: dismiss,
+        onConfirm: onConfirm ?? dismiss,
+        onClose: onClose ?? dismiss,
       ),
     );
 
@@ -379,14 +380,13 @@ class FullScreenNotificationOverlay {
   }
 
   static void dismiss() {
-    // Suppress pending-item handling for a short window to avoid
-    // side-effects (navigation/snackbars) triggered by dismissal.
-    _suppressPendingOpen = true;
     _currentEntry?.remove();
     _currentEntry = null;
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _suppressPendingOpen = false;
-    });
+  }
+
+  static void dismissWithoutPendingOpen() {
+    _currentEntry?.remove();
+    _currentEntry = null;
   }
 
   static BuildContext? _lastContext;
@@ -404,12 +404,14 @@ class FullScreenNotificationOverlay {
 class _FullScreenNotificationWidget extends StatefulWidget {
   final String title;
   final String body;
-  final VoidCallback onDismiss;
+  final VoidCallback onConfirm;
+  final VoidCallback onClose;
 
   const _FullScreenNotificationWidget({
     required this.title,
     required this.body,
-    required this.onDismiss,
+    required this.onConfirm,
+    required this.onClose,
   });
 
   @override
@@ -446,8 +448,8 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
 
   @override
   Widget build(BuildContext context) {
-    final titleText = '알림 미리보기';
-    final descriptionText = '오늘의 중요한 일정을 놓치지 마세요';
+    final titleText = _overlayText(context, 'title');
+    final descriptionText = _overlayText(context, 'body');
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -554,7 +556,7 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                                 children: [
                                   Expanded(
                                     child: ElevatedButton(
-                                      onPressed: widget.onDismiss,
+                                      onPressed: widget.onConfirm,
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: const Color(0xFF7C3AED),
                                         foregroundColor: Colors.white,
@@ -564,8 +566,8 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                                         padding: const EdgeInsets.symmetric(vertical: 16),
                                         elevation: 0,
                                       ),
-                                      child: const Text(
-                                        '확인하기',
+                                      child: Text(
+                                        _overlayText(context, 'confirm'),
                                         style: TextStyle(
                                           decoration: TextDecoration.none,
                                           fontSize: 16,
@@ -577,10 +579,7 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                               const SizedBox(width: 12),
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: () {
-                                    // Only remove the overlay; do not navigate into the app.
-                                    FullScreenNotificationOverlay.dismiss();
-                                  },
+                                  onPressed: widget.onClose,
                                   style: OutlinedButton.styleFrom(
                                     side: BorderSide(color: Colors.white.withOpacity(0.18)),
                                     shape: RoundedRectangleBorder(
@@ -588,8 +587,8 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                                     ),
                                     padding: const EdgeInsets.symmetric(vertical: 16),
                                   ),
-                                  child: const Text(
-                                    '닫기',
+                                  child: Text(
+                                    _overlayText(context, 'close'),
                                     style: TextStyle(
                                       decoration: TextDecoration.none,
                                       fontSize: 16,
@@ -612,6 +611,18 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
         ),
       ),
     );
+  }
+}
+
+
+String _overlayText(BuildContext context, String key) {
+  final l = L.of(context);
+  switch (key) {
+    case 'title': return l.pick(ko:'알림 미리보기', en:'Notification Preview', ja:'通知プレビュー', vi:'Xem trước thông báo');
+    case 'body': return l.pick(ko:'오늘의 중요한 일정을 놓치지 마세요', en:"Don't miss today's important schedule", ja:'今日の大切な予定を見逃さないでください', vi:'Đừng bỏ lỡ lịch trình quan trọng hôm nay');
+    case 'confirm': return l.pick(ko:'확인하기', en:'Confirm', ja:'確認', vi:'Xác nhận');
+    case 'close': return l.pick(ko:'닫기', en:'Close', ja:'閉じる', vi:'Đóng');
+    default: return '';
   }
 }
 
@@ -1956,6 +1967,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         title: '알림 미리보기',
         body: '',
         dismissDuration: const Duration(seconds: 5),
+        onClose: () {
+          _pendingNotificationItemId = null;
+          FullScreenNotificationOverlay.dismissWithoutPendingOpen();
+          SystemNavigator.pop();
+        },
       );
       return;
     }
@@ -1988,10 +2004,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _openPendingNotificationItem() {
-    // If overlay was just dismissed, skip opening pending items to avoid
-    // unwanted navigation or snackbars.
-    if (FullScreenNotificationOverlay._suppressPendingOpen) {
-      _pendingNotificationItemId = null;
+    // If the overlay close button was tapped, clear any pending notification item
+    // and do not process it. This avoids navigation, snackbars, or deleted-item alerts.
+    if (_pendingNotificationItemId == null) {
       return;
     }
 
