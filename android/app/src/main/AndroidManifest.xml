@@ -18,8 +18,7 @@
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:showWhenLocked="true"
-            android:turnScreenOn="true"
-            android:excludeFromRecents="true"
+            android:turnScreenOn="true"            
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
@@ -31,6 +30,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+		<activity
+			android:name=".FullScreenActivity"
+			android:exported="false"
+			android:theme="@style/LaunchTheme"
+			android:showWhenLocked="true"
+			android:turnScreenOn="true"
+			android:excludeFromRecents="true"/>
 
         <!-- Required by flutter_local_notifications for scheduled notifications -->
         <receiver
