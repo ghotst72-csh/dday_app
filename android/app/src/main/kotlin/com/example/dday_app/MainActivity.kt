@@ -1,6 +1,8 @@
 package com.forgeapps.tickday
 
 import android.appwidget.AppWidgetManager
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
@@ -42,6 +44,7 @@ class MainActivity : FlutterActivity() {
 
     private val channelName = "tickday/widget_deeplink"
     private var methodChannel: MethodChannel? = null
+    private var alarmChannel: MethodChannel? = null
     private var initialWidgetItemId: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -57,6 +60,45 @@ class MainActivity : FlutterActivity() {
                 "requestPinHomeWidget" -> {
                     val provider = call.argument<String>("provider") ?: "DdayWidgetProvider"
                     result.success(requestPinHomeWidget(provider))
+                }
+                else -> result.notImplemented()
+            }
+        }
+        alarmChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.tickday/alarm")
+        alarmChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "scheduleAlarm" -> {
+                    val alarmId = call.argument<Int>("alarmId") ?: return@setMethodCallHandler result.error("INVALID", "alarmId missing", null)
+                    val triggerAtMillis = call.argument<Long>("triggerAtMillis") ?: return@setMethodCallHandler result.error("INVALID", "triggerAtMillis missing", null)
+                    val title = call.argument<String?>("title")
+                    val body = call.argument<String?>("body")
+                    val itemId = call.argument<String?>("itemId")
+                    if (itemId != null) {
+                        getSharedPreferences("tickday_alarms", MODE_PRIVATE)
+                            .edit().putString("item_id_$alarmId", itemId).apply()
+                    }
+                    val intent = Intent(this, AlarmReceiver::class.java).apply {
+                        putExtra("schedule_id", alarmId.toString())
+                        putExtra("title", title)
+                        putExtra("body", body)
+                    }
+                    val pendingIntent = PendingIntent.getBroadcast(this, alarmId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                    val alarmManager = getSystemService(AlarmManager::class.java)
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                    result.success(null)
+                }
+                "cancelAlarm" -> {
+                    val alarmId = call.argument<Int>("alarmId") ?: return@setMethodCallHandler result.error("INVALID", "alarmId missing", null)
+                    getSharedPreferences("tickday_alarms", MODE_PRIVATE)
+                        .edit().remove("item_id_$alarmId").apply()
+                    val intent = Intent(this, AlarmReceiver::class.java)
+                    val pendingIntent = PendingIntent.getBroadcast(this, alarmId, intent, PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
+                    pendingIntent?.let {
+                        val alarmManager = getSystemService(AlarmManager::class.java)
+                        alarmManager.cancel(it)
+                        it.cancel()
+                    }
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }

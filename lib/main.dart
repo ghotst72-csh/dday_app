@@ -23,6 +23,7 @@ const String _splashSeenPrefsKey = 'tickday_splash_seen';
 const String _firstGuideSeenPrefsKey = 'tickday_first_guide_seen';
 const String _globalReminderEnabledKey = 'tickday_global_reminder_enabled';
 const String _defaultAlarmMinutesKey = 'tickday_default_alarm_minutes';
+const String _strongAlarmModeKey = 'tickday_strong_alarm_mode';
 const String _todaySummaryEnabledKey = 'tickday_today_summary_enabled';
 const String _todaySummaryHourKey = 'tickday_today_summary_hour';
 const String _todaySummaryMinuteKey = 'tickday_today_summary_minute';
@@ -334,6 +335,7 @@ print('DEBUG accepted');
 
   static Future<void> cancel(int id) async => _plugin.cancel(id);
 
+
   // ⚠️ 테스트용 풀스크린 알림 (1차 안전버전)
   // 기존 schedule(), showNow() 등은 변경 없음
   static Future<void> showFullScreenNow({
@@ -353,6 +355,35 @@ print('DEBUG accepted');
     } catch (_) {
       // 실패해도 기존 앱 기능에 영향 없음
     }
+  }
+}
+
+class NativeAlarmService {
+  NativeAlarmService._();
+  static const MethodChannel _channel = MethodChannel('com.tickday/alarm');
+
+  static Future<void> scheduleAlarm({
+    required int alarmId,
+    required DateTime scheduledAt,
+    String? title,
+    String? body,
+    String? itemId,
+  }) async {
+    try {
+      await _channel.invokeMethod('scheduleAlarm', {
+        'alarmId': alarmId,
+        'triggerAtMillis': scheduledAt.millisecondsSinceEpoch,
+        'title': title,
+        'body': body,
+        'itemId': itemId,
+      });
+    } catch (_) {}
+  }
+
+  static Future<void> cancelAlarm(int alarmId) async {
+    try {
+      await _channel.invokeMethod('cancelAlarm', {'alarmId': alarmId});
+    } catch (_) {}
   }
 }
 
@@ -1610,6 +1641,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _exactAlarmPermissionOk = false;
   bool _permissionCardExpanded = false;
   bool _globalReminderEnabled = true;
+  bool _strongAlarmMode = false;
   bool _todaySummaryEnabled = false;
   int _todaySummaryHour = 9;
   int _todaySummaryMinute = 0;
@@ -1631,7 +1663,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     NotificationService.onNotificationClick = _handleNotificationPayload;
     WidgetDeepLinkService.init(_handleWidgetItemId);
     final launchPayload = NotificationService.takeLaunchPayload();
-    _pendingNotificationItemId = (launchPayload == '__today_summary__' || launchPayload == '__test__') ? null : launchPayload;
+    final _strippedLaunch = (launchPayload?.startsWith('__alarm__:') == true) ? launchPayload!.substring('__alarm__:'.length) : launchPayload;
+    _pendingNotificationItemId = (_strippedLaunch == '__today_summary__' || _strippedLaunch == '__test__') ? null : _strippedLaunch;
     unawaited(_loadInitialWidgetItemId());
     _loadAll(rescheduleNotifications: true);
     _refreshPermissionStatus();
@@ -1986,7 +2019,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onClose: () {
           _pendingNotificationItemId = null;
           FullScreenNotificationOverlay.dismissWithoutPendingOpen();
-          SystemNavigator.pop();
+        },
+      );
+      return;
+    }
+    if (payload.startsWith('__alarm__:')) {
+      final itemId = payload.substring('__alarm__:'.length);
+      DdayItem? item;
+      try { item = _items.firstWhere((e) => e.id == itemId); } catch (_) {}
+      FullScreenNotificationOverlay.setContext(context);
+      FullScreenNotificationOverlay.show(
+        title: item?.title ?? 'D-day 알림',
+        body: '',
+        dismissDuration: const Duration(seconds: 30),
+        onConfirm: () {
+          FullScreenNotificationOverlay.dismiss();
+          _pendingNotificationItemId = itemId;
+          _openPendingNotificationItem();
+        },
+        onClose: () {
+          _pendingNotificationItemId = null;
+          FullScreenNotificationOverlay.dismissWithoutPendingOpen();
         },
       );
       return;
@@ -2205,6 +2258,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _todaySummaryHour = prefs.getInt(_todaySummaryHourKey) ?? 9;
       _todaySummaryMinute = prefs.getInt(_todaySummaryMinuteKey) ?? 0;
       _defaultAlarmMinutesBefore = prefs.getInt(_defaultAlarmMinutesKey) ?? 1440;
+      _strongAlarmMode = prefs.getBool(_strongAlarmModeKey) ?? false;
       _widgetPinnedItemId = prefs.getString(_widgetPinnedItemIdKey);
     });
 
@@ -2634,14 +2688,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     final bodyPrefix = plan.fallbackToTargetTime ? L.of(context).pick(ko: '알림 시간이 지나 D-day 정각으로 보정됨', en: 'Reminder time passed, adjusted to event time', ja: '通知時刻が過ぎたため予定時刻に調整しました', vi: 'Giờ nhắc đã qua, chuyển sang giờ sự kiện') : _alarmText(item.alarmMinutesBefore);
 
-    return NotificationService.schedule(
+    final nTitle = L.of(context).pick(ko: 'D-day 알림: ${item.title}', en: 'D-day reminder: ${item.title}', ja: 'D-day通知: ${item.title}', vi: 'Nhắc D-day: ${item.title}');
+    final nBody = '$bodyPrefix · ${_fullDate(plan.target)} ${_timeText(TimeOfDay.fromDateTime(plan.target))}';
+    final scheduled = await NotificationService.schedule(
       id: notificationId,
-      title: L.of(context).pick(ko: 'D-day 알림: ${item.title}', en: 'D-day reminder: ${item.title}', ja: 'D-day通知: ${item.title}', vi: 'Nhắc D-day: ${item.title}'),
-      body: '$bodyPrefix · ${_fullDate(plan.target)} ${_timeText(TimeOfDay.fromDateTime(plan.target))}',
+      title: nTitle,
+      body: nBody,
       scheduledAt: plan.alarmAt,
-      payload: item.id,
-      fullScreen: true,
+      payload: '__alarm__:${item.id}',
+      fullScreen: false,
     );
+    if (scheduled) {
+      unawaited(NativeAlarmService.scheduleAlarm(
+        alarmId: notificationId,
+        scheduledAt: plan.alarmAt,
+        title: nTitle,
+        body: nBody,
+        itemId: item.id,
+      ));
+    }
+    return scheduled;
   }
 
   Future<void> _deleteItem(DdayItem item) async {
@@ -2670,6 +2736,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _updateHomeWidget();
 
     unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    unawaited(NativeAlarmService.cancelAlarm(NotificationService.idFromString(item.id)));
     unawaited(_scheduleTodaySummaryNotification());
 
     if (!mounted) return;
@@ -3768,6 +3835,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               ],
                             ),
                           ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.alarm_rounded, color: _strongAlarmMode ? const Color(0xFF111827) : const Color(0xFF9CA3AF)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(l.pick(ko: '강한 알람 모드', en: 'Strong alarm mode', ja: '強いアラームモード', vi: 'Chế độ báo thức mạnh'), style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
+                                const SizedBox(height: 2),
+                                Text(l.pick(ko: '알람 발생 시 반복 멜로디를 재생합니다.', en: 'Plays a repeating melody when an alarm fires.', ja: 'アラーム発生時にメロディーをループ再生します。', vi: 'Phát âm thanh lặp lại khi báo thức.'), style: const TextStyle(fontSize: 12.3, height: 1.25, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: _strongAlarmMode,
+                            activeColor: const Color(0xFF2563EB),
+                            onChanged: (v) async {
+                              sheetSetState(() => _strongAlarmMode = v);
+                              setState(() => _strongAlarmMode = v);
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.setBool(_strongAlarmModeKey, v);
+                            },
+                          ),
                         ],
                       ),
                     ),
