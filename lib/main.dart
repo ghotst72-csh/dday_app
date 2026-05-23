@@ -408,6 +408,8 @@ class FullScreenNotificationOverlay {
 
   static BuildContext _getGlobalContext() {
     if (_lastContext != null) return _lastContext!;
+    final navContext = _navigatorKey.currentContext;
+    if (navContext != null) return navContext;
     throw Exception('FullScreenNotificationOverlay context not set');
   }
 }
@@ -691,6 +693,8 @@ class DdayApp extends StatefulWidget {
   State<DdayApp> createState() => _DdayAppState();
 }
 
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
 class _DdayAppState extends State<DdayApp> {
   @override
   void initState() {
@@ -711,6 +715,7 @@ class _DdayAppState extends State<DdayApp> {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'TickDay',
+          navigatorKey: _navigatorKey,
           locale: locale,
           supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US'), Locale('ja', 'JP'), Locale('vi', 'VN')],
           localizationsDelegates: const [
