@@ -1,4 +1,4 @@
-package com.example.dday_app
+package com.forgeapps.tickday
 
 import android.app.Activity
 import android.app.KeyguardManager
