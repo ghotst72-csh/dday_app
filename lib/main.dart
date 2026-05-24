@@ -278,16 +278,13 @@ class NotificationService {
     String? payload,
     bool fullScreen = false,
   }) async {
-    print('DEBUG schedule start');
-print('NOW=${DateTime.now()}');
-print('TARGET=$scheduledAt');
-
-if (!scheduledAt.isAfter(DateTime.now())) {
-  print('DEBUG rejected');
-  return false;
-}
-
-print('DEBUG accepted');
+    final now = DateTime.now();
+    print('[TickDayAlarm][${now.toIso8601String()}][NotificationService] schedule start id=$id payload=$payload fullScreen=$fullScreen scheduledAt=$scheduledAt');
+    if (!scheduledAt.isAfter(now)) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] schedule rejected id=$id scheduledAt=$scheduledAt');
+      return false;
+    }
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] schedule accepted id=$id');
 
     // 같은 ID로 이미 예약된 알림이 남아 있으면 기기/OS에 따라 새 예약이
     // 씹히는 경우가 있어 먼저 취소 후 다시 예약합니다.
@@ -309,8 +306,10 @@ print('DEBUG accepted');
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule exact success id=$id');
       return true;
-    } on PlatformException {
+    } on PlatformException catch (ex) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule exact failed id=$id exception=${ex.message}');
       // 정확한 알람 권한이 잠깐 꺼졌거나 Android가 exact alarm을 거부하는 경우
       // 앱이 완전히 실패하지 않도록 일반 예약 알림으로 한 번 더 시도합니다.
       try {
@@ -324,8 +323,10 @@ print('DEBUG accepted');
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         );
+        print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule inexact success id=$id');
         return true;
-      } catch (_) {
+      } catch (ex) {
+        print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule inexact failed id=$id exception=${ex}');
         return false;
       }
     } catch (_) {
@@ -368,7 +369,9 @@ class NativeAlarmService {
     String? title,
     String? body,
     String? itemId,
+    String? memo,
   }) async {
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm alarmId=$alarmId itemId=$itemId memo=${memo != null ? memo.replaceAll("\n", " ") : "null"} scheduledAt=$scheduledAt');
     try {
       await _channel.invokeMethod('scheduleAlarm', {
         'alarmId': alarmId,
@@ -376,8 +379,12 @@ class NativeAlarmService {
         'title': title,
         'body': body,
         'itemId': itemId,
+        'memo': memo,
       });
-    } catch (_) {}
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm method channel invoked alarmId=$alarmId');
+    } catch (ex) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm failed alarmId=$alarmId exception=${ex}');
+    }
   }
 
   static Future<void> cancelAlarm(int alarmId) async {
@@ -2024,24 +2031,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
     if (payload.startsWith('__alarm__:')) {
+      // 실제 예약 알림 클릭 경로: 테스트용 Overlay는 절대 표시하지 않습니다.
       final itemId = payload.substring('__alarm__:'.length);
-      DdayItem? item;
-      try { item = _items.firstWhere((e) => e.id == itemId); } catch (_) {}
-      FullScreenNotificationOverlay.setContext(context);
-      FullScreenNotificationOverlay.show(
-        title: item?.title ?? 'D-day 알림',
-        body: '',
-        dismissDuration: const Duration(seconds: 30),
-        onConfirm: () {
-          FullScreenNotificationOverlay.dismiss();
-          _pendingNotificationItemId = itemId;
-          _openPendingNotificationItem();
-        },
-        onClose: () {
-          _pendingNotificationItemId = null;
-          FullScreenNotificationOverlay.dismissWithoutPendingOpen();
-        },
-      );
+      _pendingNotificationItemId = itemId;
+      _openPendingNotificationItem();
       return;
     }
     if (payload == '__today_summary__') {
@@ -2705,6 +2698,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         title: nTitle,
         body: nBody,
         itemId: item.id,
+        memo: item.memo,
       ));
     }
     return scheduled;

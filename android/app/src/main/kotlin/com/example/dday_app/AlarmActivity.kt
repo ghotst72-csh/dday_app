@@ -11,16 +11,31 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class AlarmActivity : Activity() {
+    companion object {
+        private const val LOG_TAG = "TickDayAlarm"
+        private val LOG_TIME_FORMAT = SimpleDateFormat("HH:mm:ss", Locale.US)
+
+        private fun log(stage: String, message: String = "") {
+            val time = LOG_TIME_FORMAT.format(Date())
+            Log.i(LOG_TAG, "[$LOG_TAG][$time][$stage] ${message.trim()}")
+        }
+    }
+
     private var wakeLock: PowerManager.WakeLock? = null
     private var ringtone: Ringtone? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        log("Activity", "onCreate")
 
         setShowWhenLocked(true)
         setTurnScreenOn(true)
@@ -29,6 +44,7 @@ class AlarmActivity : Activity() {
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         )
+        log("Activity", "window flags added")
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -44,10 +60,14 @@ class AlarmActivity : Activity() {
         val openButton = findViewById<Button>(R.id.btnOpen)
         val closeButton = findViewById<Button>(R.id.btnClose)
 
-        titleView.text = intent.getStringExtra("title") ?: "TickDay 알림"
-        bodyView.text = intent.getStringExtra("body") ?: "확인할 일정이 있습니다."
+        val titleText = intent.getStringExtra("title") ?: "TickDay 알림"
+        val bodyText = intent.getStringExtra("body") ?: "확인할 일정이 있습니다."
+        val memoText = intent.getStringExtra("memo")
+        titleView.text = titleText
+        bodyView.text = bodyText
 
         val scheduleId = intent.getStringExtra("schedule_id")
+        log("Activity", "intent extras schedule_id=$scheduleId title=$titleText body=$bodyText memo=${memoText ?: "null"}")
 
         // 강한 알람 모드 — FlutterSharedPreferences에서 읽기
         val strongAlarmMode = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
@@ -90,6 +110,20 @@ class AlarmActivity : Activity() {
                 finish()
             }
         }, 30_000L)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        log("Activity", "onNewIntent")
+        if (intent == null) {
+            log("Activity", "onNewIntent received null intent")
+            return
+        }
+        val titleText = intent.getStringExtra("title") ?: "TickDay 알림"
+        val bodyText = intent.getStringExtra("body") ?: "확인할 일정이 있습니다."
+        val memoText = intent.getStringExtra("memo")
+        val scheduleId = intent.getStringExtra("schedule_id")
+        log("Activity", "onNewIntent extras schedule_id=$scheduleId title=$titleText body=$bodyText memo=${memoText ?: "null"}")
     }
 
     private fun stopRingtone() {
