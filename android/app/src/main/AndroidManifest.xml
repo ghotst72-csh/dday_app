@@ -48,7 +48,7 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance" />
+            android:launchMode="singleTask" />
 
         <!-- TickDay Native Alarm Engine: exact alarm receiver -->
         <receiver

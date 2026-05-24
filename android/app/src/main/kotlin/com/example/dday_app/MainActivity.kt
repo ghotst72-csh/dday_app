@@ -9,7 +9,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.app.KeyguardManager
-import android.util.Log
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -75,10 +74,11 @@ class MainActivity : FlutterActivity() {
                     val body = call.argument<String?>("body")
                     val itemId = call.argument<String?>("itemId")
                     val memo = call.argument<String?>("memo")
-                    Log.i("TickDayAlarm", "[TickDayAlarm][MainActivity] scheduleAlarm alarmId=$alarmId triggerAtMillis=$triggerAtMillis itemId=$itemId memo=${memo ?: "null"}")
+                    AlarmTrace.enter("MainActivity", "scheduleAlarm alarmId=$alarmId triggerAtMillis=$triggerAtMillis itemId=$itemId memo=${memo ?: "null"}")
                     if (itemId != null) {
                         getSharedPreferences("tickday_alarms", MODE_PRIVATE)
                             .edit().putString("item_id_$alarmId", itemId).apply()
+                        AlarmTrace.step("MainActivity", "sharedPrefs saved item_id_$alarmId=$itemId")
                     }
                     val intent = Intent(this, AlarmReceiver::class.java).apply {
                         putExtra("schedule_id", alarmId.toString())
@@ -87,23 +87,27 @@ class MainActivity : FlutterActivity() {
                         if (memo != null) putExtra("memo", memo)
                     }
                     val pendingIntent = PendingIntent.getBroadcast(this, alarmId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                    AlarmTrace.step("MainActivity", "pendingIntent created alarmId=$alarmId")
                     val alarmManager = getSystemService(AlarmManager::class.java)
                     alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
-                    Log.i("TickDayAlarm", "[TickDayAlarm][MainActivity] setExactAndAllowWhileIdle alarmId=$alarmId")
+                    AlarmTrace.success("MainActivity", "setExactAndAllowWhileIdle alarmId=$alarmId triggerAtMillis=$triggerAtMillis")
                     result.success(null)
                 }
                 "cancelAlarm" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: return@setMethodCallHandler result.error("INVALID", "alarmId missing", null)
-                    Log.i("TickDayAlarm", "[TickDayAlarm][MainActivity] cancelAlarm alarmId=$alarmId")
+                    AlarmTrace.enter("MainActivity", "cancelAlarm alarmId=$alarmId")
                     getSharedPreferences("tickday_alarms", MODE_PRIVATE)
                         .edit().remove("item_id_$alarmId").apply()
+                    AlarmTrace.step("MainActivity", "sharedPrefs item_id_$alarmId removed")
                     val intent = Intent(this, AlarmReceiver::class.java)
                     val pendingIntent = PendingIntent.getBroadcast(this, alarmId, intent, PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
-                    pendingIntent?.let {
+                    if (pendingIntent != null) {
                         val alarmManager = getSystemService(AlarmManager::class.java)
-                        alarmManager.cancel(it)
-                        it.cancel()
-                        Log.i("TickDayAlarm", "[TickDayAlarm][MainActivity] cancelAlarm pendingIntent canceled alarmId=$alarmId")
+                        alarmManager.cancel(pendingIntent)
+                        pendingIntent.cancel()
+                        AlarmTrace.success("MainActivity", "cancelAlarm pendingIntent canceled alarmId=$alarmId")
+                    } else {
+                        AlarmTrace.step("MainActivity", "cancelAlarm no pendingIntent found alarmId=$alarmId")
                     }
                     result.success(null)
                 }

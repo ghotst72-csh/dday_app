@@ -1,0 +1,56 @@
+--------- beginning of main
+05-25 01:04:28.043 16225 16225 I TickDayAlarm: [TickDayAlarm][01:04:28.042][MainActivity][enter] scheduleAlarm alarmId=1789767787 triggerAtMillis=1779638700000 itemId=1779638667905863 memo=
+05-25 01:04:28.044 16225 16225 I TickDayAlarm: [TickDayAlarm][01:04:28.043][MainActivity][step] sharedPrefs saved item_id_1789767787=1779638667905863
+05-25 01:04:28.044 16225 16225 I TickDayAlarm: [TickDayAlarm][01:04:28.044][MainActivity][step] pendingIntent created alarmId=1789767787
+05-25 01:04:28.044 16225 16225 I TickDayAlarm: [TickDayAlarm][01:04:28.044][MainActivity][success] setExactAndAllowWhileIdle alarmId=1789767787 triggerAtMillis=1779638700000
+05-25 01:05:00.028 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.028][Receiver][enter] onReceive
+05-25 01:05:00.029 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.029][Receiver][state] intent.scheduleId=1789767787
+05-25 01:05:00.029 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.029][Receiver][state] intent.title=D-day 알림: ㅗ오오옹ㅇㅇㅇㅇㄱ
+05-25 01:05:00.029 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.029][Receiver][state] intent.body=정각 알림 · 2026.05.25 01:05
+05-25 01:05:00.029 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.029][Receiver][state] intent.memo=
+05-25 01:05:00.029 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.029][Receiver][state] screen.isInteractive=false
+05-25 01:05:00.030 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.030][Receiver][state] keyguard.isLocked=true
+05-25 01:05:00.030 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.030][Receiver][state] notifications.enabled=true
+05-25 01:05:00.030 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.030][Receiver][state] alarmIntent.action=com.forgeapps.tickday.ALARM_1789767787
+05-25 01:05:00.030 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.030][Receiver][state] alarmIntent.flags=880803840
+05-25 01:05:00.034 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.034][Receiver][state] requestCode=1789767787
+05-25 01:05:00.035 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.034][Receiver][step] fullScreenPi created
+05-25 01:05:00.037 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.037][Receiver][step] channel created id=tickday_native_alarm_v2
+05-25 01:05:00.040 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.040][Receiver][success] notify called requestCode=1789767787
+05-25 01:05:00.040 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.040][Receiver][step] fallback startActivity attempt
+05-25 01:05:00.043 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.043][Receiver][success] fallback startActivity ok
+05-25 01:05:00.304 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.304][Activity][enter] onCreate
+05-25 01:05:00.306 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.306][Activity][step] window flags set: SHOW_WHEN_LOCKED|TURN_SCREEN_ON|KEEP_SCREEN_ON
+05-25 01:05:00.307 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.306][Activity][step] wakeLock acquired
+05-25 01:05:00.314 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.314][Activity][state] intent.scheduleId=1789767787
+05-25 01:05:00.314 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.314][Activity][state] intent.title=D-day 알림: ㅗ오오옹ㅇㅇㅇㅇㄱ
+05-25 01:05:00.314 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.314][Activity][state] intent.body=정각 알림 · 2026.05.25 01:05
+05-25 01:05:00.314 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.314][Activity][state] intent.memo=
+05-25 01:05:00.314 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.314][Activity][state] strongAlarmMode=false
+05-25 01:05:00.314 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:00.314][Activity][success] onCreate complete
+05-25 01:05:04.335 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:04.334][Activity][step] btnOpen clicked
+05-25 01:05:04.335 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:04.335][Activity][step] ringtone stopped
+05-25 01:05:04.335 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:04.335][Activity][state] openBtn.itemId=1779638667905863
+05-25 01:05:04.335 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:04.335][Activity][step] opening main with deeplink tickday://widget/1779638667905863
+05-25 01:05:04.861 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:04.861][Activity][enter] onDestroy
+05-25 01:05:04.861 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:04.861][Activity][step] ringtone stopped
+05-25 01:05:27.585 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:27.584][MainActivity][enter] scheduleAlarm alarmId=1789767787 triggerAtMillis=1779638760000 itemId=1779638667905863 memo=ㅇㅇ
+05-25 01:05:27.585 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:27.585][MainActivity][step] sharedPrefs saved item_id_1789767787=1779638667905863
+05-25 01:05:27.585 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:27.585][MainActivity][step] pendingIntent created alarmId=1789767787
+05-25 01:05:27.585 16225 16225 I TickDayAlarm: [TickDayAlarm][01:05:27.585][MainActivity][success] setExactAndAllowWhileIdle alarmId=1789767787 triggerAtMillis=1779638760000
+05-25 01:06:00.064 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.064][Receiver][enter] onReceive
+05-25 01:06:00.064 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.064][Receiver][state] intent.scheduleId=1789767787
+05-25 01:06:00.064 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.064][Receiver][state] intent.title=D-day 알림: 풀스크린 테스트
+05-25 01:06:00.064 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.064][Receiver][state] intent.body=정각 알림 · 2026.05.25 01:06
+05-25 01:06:00.064 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.064][Receiver][state] intent.memo=ㅇㅇ
+05-25 01:06:00.064 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.064][Receiver][state] screen.isInteractive=false
+05-25 01:06:00.065 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.065][Receiver][state] keyguard.isLocked=true
+05-25 01:06:00.065 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.065][Receiver][state] notifications.enabled=true
+05-25 01:06:00.065 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.065][Receiver][state] alarmIntent.action=com.forgeapps.tickday.ALARM_1789767787
+05-25 01:06:00.065 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.065][Receiver][state] alarmIntent.flags=880803840
+05-25 01:06:00.065 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.065][Receiver][state] requestCode=1789767787
+05-25 01:06:00.065 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.065][Receiver][step] fullScreenPi created
+05-25 01:06:00.066 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.066][Receiver][step] channel already exists id=tickday_native_alarm_v2
+05-25 01:06:00.067 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.067][Receiver][success] notify called requestCode=1789767787
+05-25 01:06:00.067 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.067][Receiver][step] fallback startActivity attempt
+05-25 01:06:00.070 16225 16225 I TickDayAlarm: [TickDayAlarm][01:06:00.070][Receiver][success] fallback startActivity ok

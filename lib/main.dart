@@ -293,7 +293,7 @@ class NotificationService {
     final scheduled = tz.TZDateTime.from(scheduledAt, tz.local);
     final details = fullScreen ? _detailsFullScreen : _details;
 
-    print('DEBUG zonedSchedule called');
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule start id=$id scheduledAt=$scheduled');
 
     try {
       await _plugin.zonedSchedule(
@@ -388,9 +388,13 @@ class NativeAlarmService {
   }
 
   static Future<void> cancelAlarm(int alarmId) async {
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] cancelAlarm alarmId=$alarmId');
     try {
       await _channel.invokeMethod('cancelAlarm', {'alarmId': alarmId});
-    } catch (_) {}
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] cancelAlarm ok alarmId=$alarmId');
+    } catch (ex) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] cancelAlarm failed alarmId=$alarmId exception=$ex');
+    }
   }
 }
 

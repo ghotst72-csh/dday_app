@@ -1,0 +1,40 @@
+package com.example.dday_app
+
+import android.util.Log
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+object AlarmTrace {
+    private const val TAG = "TickDayAlarm"
+    var enabled: Boolean = true
+    private val fmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+
+    private fun ts() = fmt.format(Date())
+
+    fun enter(area: String, message: String = "") {
+        if (!enabled) return
+        Log.i(TAG, "[$TAG][${ts()}][$area][enter] $message")
+    }
+
+    fun step(area: String, message: String) {
+        if (!enabled) return
+        Log.i(TAG, "[$TAG][${ts()}][$area][step] $message")
+    }
+
+    fun state(area: String, key: String, value: Any?) {
+        if (!enabled) return
+        Log.i(TAG, "[$TAG][${ts()}][$area][state] $key=$value")
+    }
+
+    fun success(area: String, message: String) {
+        if (!enabled) return
+        Log.i(TAG, "[$TAG][${ts()}][$area][success] $message")
+    }
+
+    fun fail(area: String, message: String, throwable: Throwable? = null) {
+        if (!enabled) return
+        val suffix = if (throwable != null) " | ${throwable.javaClass.simpleName}: ${throwable.message}" else ""
+        Log.i(TAG, "[$TAG][${ts()}][$area][fail] $message$suffix")
+    }
+}
