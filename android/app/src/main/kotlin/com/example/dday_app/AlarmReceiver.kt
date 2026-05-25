@@ -41,6 +41,10 @@ class AlarmReceiver : BroadcastReceiver() {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         AlarmTrace.state(AREA, "notifications.enabled", nm.areNotificationsEnabled())
 
+        val strongAlarmMode = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            .getBoolean("flutter.tickday_strong_alarm_mode", false)
+        AlarmTrace.state(AREA, "strongAlarmMode", strongAlarmMode)
+
         val alarmIntent = Intent(context, AlarmActivity::class.java).apply {
             action = "com.forgeapps.tickday.ALARM_${scheduleId ?: System.currentTimeMillis()}"
             addFlags(
@@ -57,7 +61,21 @@ class AlarmReceiver : BroadcastReceiver() {
         AlarmTrace.state(AREA, "alarmIntent.action", alarmIntent.action)
         AlarmTrace.state(AREA, "alarmIntent.flags", alarmIntent.flags)
 
+        val mainIntent = Intent(context, MainActivity::class.java).apply {
+            action = "com.forgeapps.tickday.OPEN_${scheduleId ?: System.currentTimeMillis()}"
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("schedule_id", scheduleId)
+            putExtra("title", title)
+            putExtra("body", body)
+            if (memo != null) putExtra("memo", memo)
+        }
+        AlarmTrace.state(AREA, "mainIntent.action", mainIntent.action)
+
+        val baseId = scheduleId?.toIntOrNull() ?: System.currentTimeMillis().toInt()
         val requestCode = System.currentTimeMillis().toInt()
+        val notificationId = if (strongAlarmMode) requestCode else baseId
+        AlarmTrace.state(AREA, "baseId", baseId)
+        AlarmTrace.state(AREA, "notificationId", notificationId)
         AlarmTrace.state(AREA, "requestCode", requestCode)
 
         val fullScreenPi = PendingIntent.getActivity(
@@ -66,31 +84,48 @@ class AlarmReceiver : BroadcastReceiver() {
         )
         AlarmTrace.step(AREA, "fullScreenPi created")
 
+        val contentPi = PendingIntent.getActivity(
+            context, requestCode + 1, if (strongAlarmMode) alarmIntent else mainIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        AlarmTrace.step(AREA, "contentPi created target=${if (strongAlarmMode) "AlarmActivity" else "MainActivity"}")
+
         ensureChannel(context)
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(if (strongAlarmMode) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(if (strongAlarmMode) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setFullScreenIntent(fullScreenPi, true)
-            .setContentIntent(fullScreenPi)
+            .setContentIntent(contentPi)
             .setAutoCancel(true)
-            .build()
 
-        nm.notify(requestCode, notification)
-        AlarmTrace.success(AREA, "notify called requestCode=$requestCode")
+        if (strongAlarmMode) {
+            builder.setFullScreenIntent(fullScreenPi, true)
+            AlarmTrace.step(AREA, "fullScreenIntent enabled by strongAlarmMode")
+        } else {
+            AlarmTrace.step(AREA, "fullScreenIntent skipped because strongAlarmMode=false")
+        }
 
-        // Fallback only: on some Samsung lock-screen states, direct Activity launch
-        // from BroadcastReceiver may be ignored. Prefer fullScreenIntent first.
-        AlarmTrace.step(AREA, "fallback startActivity attempt")
-        try {
-            context.startActivity(alarmIntent)
-            AlarmTrace.success(AREA, "fallback startActivity ok")
-        } catch (ex: Exception) {
-            AlarmTrace.fail(AREA, "fallback startActivity failed", ex)
+        val notification = builder.build()
+
+        nm.notify(notificationId, notification)
+        AlarmTrace.success(AREA, "notify called notificationId=$notificationId requestCode=$requestCode")
+
+        if (strongAlarmMode) {
+            // Fallback only: on some Samsung lock-screen states, direct Activity launch
+            // from BroadcastReceiver may be ignored. Prefer fullScreenIntent first.
+            AlarmTrace.step(AREA, "fallback startActivity attempt")
+            try {
+                context.startActivity(alarmIntent)
+                AlarmTrace.success(AREA, "fallback startActivity ok")
+            } catch (ex: Exception) {
+                AlarmTrace.fail(AREA, "fallback startActivity failed", ex)
+            }
+        } else {
+            AlarmTrace.step(AREA, "fallback startActivity skipped because strongAlarmMode=false")
         }
     }
 

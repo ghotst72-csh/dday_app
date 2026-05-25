@@ -295,6 +295,15 @@ class NotificationService {
 
     print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule start id=$id scheduledAt=$scheduled');
 
+    // If this is a full-screen (strong) alarm, skip Flutter's zonedSchedule
+    // and let the native alarm scheduler handle the full-screen behavior.
+    if (fullScreen) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] fullScreen=true skip flutter zonedSchedule id=$id');
+      // User-requested plain log for easier filtering in debug logs
+      print('[NotificationService] fullScreen=true skip flutter zonedSchedule');
+      return true;
+    }
+
     try {
       await _plugin.zonedSchedule(
         id,
@@ -371,6 +380,7 @@ class NativeAlarmService {
     String? itemId,
     String? memo,
   }) async {
+    print('[NativeAlarmService] ENTER scheduleAlarm alarmId=$alarmId');
     print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm alarmId=$alarmId itemId=$itemId memo=${memo != null ? memo.replaceAll("\n", " ") : "null"} scheduledAt=$scheduledAt');
     try {
       await _channel.invokeMethod('scheduleAlarm', {
@@ -382,8 +392,12 @@ class NativeAlarmService {
         'memo': memo,
       });
       print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm method channel invoked alarmId=$alarmId');
+      // Additional concise logs for requested trace
+      print('[NativeAlarmService] scheduleAlarm called');
+      print('[NativeAlarmService] alarm scheduled requestCode=$alarmId');
     } catch (ex) {
       print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm failed alarmId=$alarmId exception=${ex}');
+      print('[NativeAlarmService] FAILED scheduleAlarm alarmId=$alarmId exception=${ex}');
     }
   }
 
@@ -2696,14 +2710,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       fullScreen: false,
     );
     if (scheduled) {
-      unawaited(NativeAlarmService.scheduleAlarm(
+      // FOR TESTING: temporarily await native scheduling so logs are visible
+      await NativeAlarmService.scheduleAlarm(
         alarmId: notificationId,
         scheduledAt: plan.alarmAt,
         title: nTitle,
         body: nBody,
         itemId: item.id,
         memo: item.memo,
-      ));
+      );
     }
     return scheduled;
   }
@@ -4064,6 +4079,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       payload: '__fullscreen_auto__',
       fullScreen: true,
     );
+
+    // For testing strong (full-screen) alarms, also schedule the native alarm
+    // so we can observe native FullScreen behavior without Flutter's zonedSchedule.
+    if (scheduledOk) {
+      unawaited(NativeAlarmService.scheduleAlarm(
+        alarmId: 999889,
+        scheduledAt: scheduledAt,
+        title: L.of(context).pick(
+          ko: '풀스크린 알림 테스트',
+          en: 'Full-Screen Test',
+          ja: 'フルスクリーン通知テスト',
+          vi: 'Kiểm tra toàn màn hình',
+        ),
+        body: L.of(context).pick(
+          ko: 'TickDay 풀스크린 알림이 작동하는지 확인합니다.',
+          en: 'Checking if full-screen notifications work.',
+          ja: 'フルスクリーン通知の動作確認中です。',
+          vi: 'Đang kiểm tra thông báo toàn màn hình.',
+        ),
+        itemId: '__fullscreen_test__',
+        memo: null,
+      ));
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
