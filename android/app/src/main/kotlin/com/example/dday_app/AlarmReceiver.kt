@@ -18,6 +18,7 @@ class AlarmReceiver : BroadcastReceiver() {
 
     companion object {
         private const val CHANNEL_ID = "tickday_native_alarm_v2"
+        private const val SILENT_CHANNEL_ID = "tickday_native_alarm_strong"
         private const val AREA = "Receiver"
     }
 
@@ -71,9 +72,11 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         AlarmTrace.state(AREA, "mainIntent.action", mainIntent.action)
 
-        val baseId = scheduleId?.toIntOrNull() ?: System.currentTimeMillis().toInt()
+        // notificationId는 항상 baseId 고정 — flutter_local_notifications 알림과 같은 ID를
+        // 사용해 덮어쓰기(replace)하므로 알림창에 항상 1개만 표시됨
+        val baseId = scheduleId?.toIntOrNull() ?: 0
+        val notificationId = baseId
         val requestCode = System.currentTimeMillis().toInt()
-        val notificationId = if (strongAlarmMode) requestCode else baseId
         AlarmTrace.state(AREA, "baseId", baseId)
         AlarmTrace.state(AREA, "notificationId", notificationId)
         AlarmTrace.state(AREA, "requestCode", requestCode)
@@ -82,17 +85,25 @@ class AlarmReceiver : BroadcastReceiver() {
             context, requestCode, alarmIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        AlarmTrace.step(AREA, "fullScreenPi created")
+        AlarmTrace.step(AREA, "fullScreenPi created requestCode=$requestCode")
 
         val contentPi = PendingIntent.getActivity(
             context, requestCode + 1, if (strongAlarmMode) alarmIntent else mainIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        AlarmTrace.step(AREA, "contentPi created target=${if (strongAlarmMode) "AlarmActivity" else "MainActivity"}")
+        AlarmTrace.step(AREA, "contentPi created requestCode=${requestCode + 1} target=${if (strongAlarmMode) "AlarmActivity" else "MainActivity"}")
 
-        ensureChannel(context)
+        if (strongAlarmMode) {
+            // 강한 알림 모드: 무음 채널 사용 — 알람 소리는 AlarmActivity.ringtone 한 곳에서만 재생
+            ensureSilentChannel(context)
+            AlarmTrace.step(AREA, "using silent channel id=$SILENT_CHANNEL_ID")
+        } else {
+            ensureChannel(context)
+            AlarmTrace.step(AREA, "using sound channel id=$CHANNEL_ID")
+        }
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+        val channelId = if (strongAlarmMode) SILENT_CHANNEL_ID else CHANNEL_ID
+        val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
@@ -100,10 +111,15 @@ class AlarmReceiver : BroadcastReceiver() {
             .setCategory(if (strongAlarmMode) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(contentPi)
-            .setAutoCancel(true)
+            .setDefaults(0)
+            .setAutoCancel(!strongAlarmMode)
 
         if (strongAlarmMode) {
+            // Strong alarms must stay visible and must be treated as a real alarm.
+            // The notification itself is silent; AlarmActivity owns ringtone playback.
             builder.setFullScreenIntent(fullScreenPi, true)
+            builder.setOngoing(true)
+            builder.setOnlyAlertOnce(true)
             AlarmTrace.step(AREA, "fullScreenIntent enabled by strongAlarmMode")
         } else {
             AlarmTrace.step(AREA, "fullScreenIntent skipped because strongAlarmMode=false")
@@ -112,7 +128,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val notification = builder.build()
 
         nm.notify(notificationId, notification)
-        AlarmTrace.success(AREA, "notify called notificationId=$notificationId requestCode=$requestCode")
+        AlarmTrace.success(AREA, "notify called notificationId=$notificationId channelId=$channelId")
 
         if (strongAlarmMode) {
             // Fallback only: on some Samsung lock-screen states, direct Activity launch
@@ -151,5 +167,23 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         nm.createNotificationChannel(channel)
         AlarmTrace.step(AREA, "channel created id=$CHANNEL_ID")
+    }
+
+    private fun ensureSilentChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (nm.getNotificationChannel(SILENT_CHANNEL_ID) != null) {
+            AlarmTrace.step(AREA, "silent channel already exists id=$SILENT_CHANNEL_ID")
+            return
+        }
+
+        val channel = NotificationChannel(SILENT_CHANNEL_ID, "TickDay 강한 알람", NotificationManager.IMPORTANCE_MAX).apply {
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            enableVibration(true)
+            enableLights(true)
+            setSound(null, null)
+        }
+        nm.createNotificationChannel(channel)
+        AlarmTrace.step(AREA, "silent channel created id=$SILENT_CHANNEL_ID")
     }
 }
