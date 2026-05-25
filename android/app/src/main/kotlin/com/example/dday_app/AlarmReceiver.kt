@@ -57,7 +57,7 @@ class AlarmReceiver : BroadcastReceiver() {
         AlarmTrace.state(AREA, "alarmIntent.action", alarmIntent.action)
         AlarmTrace.state(AREA, "alarmIntent.flags", alarmIntent.flags)
 
-        val requestCode = scheduleId?.toIntOrNull() ?: 0
+        val requestCode = System.currentTimeMillis().toInt()
         AlarmTrace.state(AREA, "requestCode", requestCode)
 
         val fullScreenPi = PendingIntent.getActivity(
