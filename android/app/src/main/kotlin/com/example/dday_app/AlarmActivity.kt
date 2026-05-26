@@ -56,6 +56,14 @@ class AlarmActivity : Activity() {
         val bodyText = intent.getStringExtra("body") ?: "확인할 일정이 있습니다."
         val memoText = intent.getStringExtra("memo")
         val scheduleId = intent.getStringExtra("schedule_id")
+        // mark that AlarmActivity has started for this schedule
+        try {
+            val prefs = getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
+            if (scheduleId != null) {
+                prefs.edit().putBoolean("alarm_activity_started_$scheduleId", true).apply()
+                AlarmTrace.step(AREA, "startup flag set alarm_activity_started_$scheduleId")
+            }
+        } catch (_: Exception) {}
         titleView.text = titleText
         bodyView.text = bodyText
         AlarmTrace.state(AREA, "intent.scheduleId", scheduleId)
@@ -126,6 +134,14 @@ class AlarmActivity : Activity() {
             AlarmTrace.step(AREA, "onNewIntent null intent")
             return
         }
+        try {
+            val scheduleId = intent.getStringExtra("schedule_id")
+            val prefs = getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
+            if (scheduleId != null) {
+                prefs.edit().putBoolean("alarm_activity_started_$scheduleId", true).apply()
+                AlarmTrace.step(AREA, "startup flag set onNewIntent alarm_activity_started_$scheduleId")
+            }
+        } catch (_: Exception) {}
         val titleText = intent.getStringExtra("title") ?: "TickDay 알림"
         val bodyText = intent.getStringExtra("body") ?: "확인할 일정이 있습니다."
         val memoText = intent.getStringExtra("memo")
@@ -149,6 +165,14 @@ class AlarmActivity : Activity() {
             if (it.isHeld) it.release()
         }
         wakeLock = null
+        try {
+            val scheduleId = intent.getStringExtra("schedule_id")
+            val prefs = getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
+            if (scheduleId != null) {
+                prefs.edit().putBoolean("alarm_activity_started_$scheduleId", false).apply()
+                AlarmTrace.step(AREA, "startup flag cleared onDestroy alarm_activity_started_$scheduleId")
+            }
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 }

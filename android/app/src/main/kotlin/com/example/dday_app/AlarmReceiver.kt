@@ -9,9 +9,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 
 class AlarmReceiver : BroadcastReceiver() {
@@ -129,6 +132,67 @@ class AlarmReceiver : BroadcastReceiver() {
 
         nm.notify(notificationId, notification)
         AlarmTrace.success(AREA, "notify called notificationId=$notificationId channelId=$channelId")
+
+        // Clear startup flag and schedule verification check: if AlarmActivity did not start,
+        // retry sending the fullScreen PendingIntent after a short delay (500ms).
+        try {
+            val prefs = context.getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
+            if (scheduleId != null) {
+                prefs.edit().putBoolean("alarm_activity_started_$scheduleId", false).apply()
+                AlarmTrace.step(AREA, "startup flag cleared alarm_activity_started_$scheduleId")
+            }
+            val checkDelayMs = 500L // between 300-700ms as discussed
+            AlarmTrace.step(AREA, "scheduling post-notify check in ${checkDelayMs}ms")
+            Handler(Looper.getMainLooper()).postDelayed({
+                AlarmTrace.step(AREA, "post-notify delayed check entered")
+                try {
+                    val started = if (scheduleId != null) prefs.getBoolean("alarm_activity_started_$scheduleId", false) else false
+                    AlarmTrace.state(AREA, "postNotify.started", started.toString())
+                    if (!started) {
+                        AlarmTrace.step(AREA, "post-notify check: AlarmActivity not started, attempting fullScreenPi.send()")
+                        try {
+                            AlarmTrace.step(AREA, "about to call fullScreenPi.send()")
+                            fullScreenPi.send()
+                            AlarmTrace.success(AREA, "fullScreenPi.send() retry ok")
+                        } catch (ex: Exception) {
+                            AlarmTrace.fail(AREA, "fullScreenPi.send() retry failed", ex)
+                        }
+
+                        // After attempting send, verify again after a short delay; if still not started,
+                        // play a fallback ringtone from the receiver so at least a melody is heard.
+                        val verifyDelay = 400L
+                        AlarmTrace.step(AREA, "scheduling post-send verify in ${verifyDelay}ms")
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            try {
+                                val started2 = if (scheduleId != null) prefs.getBoolean("alarm_activity_started_$scheduleId", false) else false
+                                AlarmTrace.state(AREA, "postSend.verify.started", started2.toString())
+                                if (!started2) {
+                                    AlarmTrace.step(AREA, "post-send verify: still not started, playing fallback ringtone")
+                                    try {
+                                        val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                                        val fallbackRingtone: Ringtone? = try { RingtoneManager.getRingtone(context, alarmUri) } catch (e: Exception) { null }
+                                        fallbackRingtone?.play()
+                                        AlarmTrace.step(AREA, "fallback ringtone play started")
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            try {
+                                                fallbackRingtone?.stop()
+                                                AlarmTrace.step(AREA, "fallback ringtone stopped")
+                                            } catch (_: Exception) {}
+                                        }, 5_000L)
+                                    } catch (ex: Exception) {
+                                        AlarmTrace.fail(AREA, "fallback ringtone failed", ex)
+                                    }
+                                } else {
+                                    AlarmTrace.step(AREA, "post-send verify: AlarmActivity started after send")
+                                }
+                            } catch (_: Exception) {}
+                        }, verifyDelay)
+                    } else {
+                        AlarmTrace.step(AREA, "post-notify check: AlarmActivity already started")
+                    }
+                } catch (_: Exception) {}
+            }, checkDelayMs)
+        } catch (_: Exception) {}
 
         if (strongAlarmMode) {
             // Fallback only: on some Samsung lock-screen states, direct Activity launch
