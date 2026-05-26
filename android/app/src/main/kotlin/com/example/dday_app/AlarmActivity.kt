@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
@@ -23,6 +24,7 @@ class AlarmActivity : Activity() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var ringtone: Ringtone? = null
+    private var currentScheduleId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,21 +49,10 @@ class AlarmActivity : Activity() {
 
         setContentView(R.layout.activity_alarm)
 
-        val titleView = findViewById<TextView>(R.id.alarmTitle)
-        val bodyView = findViewById<TextView>(R.id.alarmBody)
         val openButton = findViewById<Button>(R.id.btnOpen)
         val closeButton = findViewById<Button>(R.id.btnClose)
 
-        val titleText = intent.getStringExtra("title") ?: "TickDay 알림"
-        val bodyText = intent.getStringExtra("body") ?: "확인할 일정이 있습니다."
-        val memoText = intent.getStringExtra("memo")
-        val scheduleId = intent.getStringExtra("schedule_id")
-        titleView.text = titleText
-        bodyView.text = bodyText
-        AlarmTrace.state(AREA, "intent.scheduleId", scheduleId)
-        AlarmTrace.state(AREA, "intent.title", titleText)
-        AlarmTrace.state(AREA, "intent.body", bodyText)
-        AlarmTrace.state(AREA, "intent.memo", memoText ?: "null")
+        bindAlarmViews(intent)
 
         val strongAlarmMode = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             .getBoolean("flutter.tickday_strong_alarm_mode", false)
@@ -84,6 +75,7 @@ class AlarmActivity : Activity() {
         openButton.setOnClickListener {
             AlarmTrace.step(AREA, "btnOpen clicked")
             stopRingtone()
+            val scheduleId = currentScheduleId
             val itemId = if (scheduleId != null) {
                 getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
                     .getString("item_id_$scheduleId", null)
@@ -126,14 +118,67 @@ class AlarmActivity : Activity() {
             AlarmTrace.step(AREA, "onNewIntent null intent")
             return
         }
-        val titleText = intent.getStringExtra("title") ?: "TickDay 알림"
-        val bodyText = intent.getStringExtra("body") ?: "확인할 일정이 있습니다."
-        val memoText = intent.getStringExtra("memo")
-        val scheduleId = intent.getStringExtra("schedule_id")
-        AlarmTrace.state(AREA, "onNewIntent.scheduleId", scheduleId)
-        AlarmTrace.state(AREA, "onNewIntent.title", titleText)
-        AlarmTrace.state(AREA, "onNewIntent.body", bodyText)
-        AlarmTrace.state(AREA, "onNewIntent.memo", memoText ?: "null")
+
+        setIntent(intent)
+        bindAlarmViews(intent)
+    }
+
+    private fun bindAlarmViews(sourceIntent: Intent) {
+        val titleView = findViewById<TextView>(R.id.alarmTitle)
+        val bodyView = findViewById<TextView>(R.id.alarmBody)
+        val memoView = findViewById<TextView>(R.id.alarmMemo)
+
+        val titleText = sourceIntent.getStringExtra("title") ?: "TickDay 알림"
+        val bodyText = sourceIntent.getStringExtra("body") ?: "확인할 일정이 있습니다."
+        val memoText = sourceIntent.getStringExtra("memo")
+        val scheduleId = sourceIntent.getStringExtra("schedule_id")
+        currentScheduleId = scheduleId
+
+        markActivityStarted(scheduleId)
+
+        titleView.text = titleText
+        bodyView.text = bodyText
+
+        if (!memoText.isNullOrBlank()) {
+            memoView.text = memoText
+            memoView.visibility = View.VISIBLE
+            AlarmTrace.step(AREA, "memo visible")
+        } else {
+            memoView.text = ""
+            memoView.visibility = View.GONE
+            AlarmTrace.step(AREA, "memo hidden")
+        }
+
+        AlarmTrace.state(AREA, "intent.scheduleId", scheduleId)
+        AlarmTrace.state(AREA, "intent.title", titleText)
+        AlarmTrace.state(AREA, "intent.body", bodyText)
+        AlarmTrace.state(AREA, "intent.memo", memoText ?: "null")
+    }
+
+    private fun markActivityStarted(scheduleId: String?) {
+        if (scheduleId == null) return
+        try {
+            getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("alarm_activity_started_$scheduleId", true)
+                .apply()
+            AlarmTrace.step(AREA, "startup flag set alarm_activity_started_$scheduleId")
+        } catch (ex: Exception) {
+            AlarmTrace.fail(AREA, "startup flag set failed", ex)
+        }
+    }
+
+    private fun clearActivityStarted(scheduleId: String?) {
+        if (scheduleId == null) return
+        try {
+            getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("alarm_activity_started_$scheduleId", false)
+                .apply()
+            AlarmTrace.step(AREA, "startup flag cleared alarm_activity_started_$scheduleId")
+        } catch (ex: Exception) {
+            AlarmTrace.fail(AREA, "startup flag clear failed", ex)
+        }
     }
 
     private fun stopRingtone() {
@@ -149,6 +194,7 @@ class AlarmActivity : Activity() {
             if (it.isHeld) it.release()
         }
         wakeLock = null
+        clearActivityStarted(currentScheduleId)
         super.onDestroy()
     }
 }

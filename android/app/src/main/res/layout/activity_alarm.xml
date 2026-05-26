@@ -27,6 +27,19 @@
         android:textColor="#E5E7EB"
         android:textSize="18sp" />
 
+
+
+    <TextView
+        android:id="@+id/alarmMemo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:gravity="center"
+        android:text=""
+        android:textColor="#D1D5DB"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
     <Button
         android:id="@+id/btnOpen"
         android:layout_width="match_parent"
