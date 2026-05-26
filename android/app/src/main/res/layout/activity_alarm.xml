@@ -1,57 +1,147 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#111827"
-    android:gravity="center"
-    android:orientation="vertical"
-    android:padding="28dp">
+    android:background="#080D1C">
 
-    <TextView
-        android:id="@+id/alarmTitle"
+    <!-- Top-left purple glow blob (alpha driven by animator) -->
+    <View
+        android:id="@+id/glowPurple"
+        android:layout_width="280dp"
+        android:layout_height="280dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="-100dp"
+        android:layout_marginTop="-100dp"
+        android:alpha="0.18"
+        android:background="@drawable/alarm_glow_purple" />
+
+    <!-- Bottom-right blue glow blob (alpha driven by animator) -->
+    <View
+        android:id="@+id/glowBlue"
+        android:layout_width="240dp"
+        android:layout_height="240dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="-80dp"
+        android:layout_marginBottom="-80dp"
+        android:alpha="0.18"
+        android:background="@drawable/alarm_glow_blue" />
+
+    <!-- Centered card, scrollable for small screens -->
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:text="TickDay 알림"
-        android:textColor="#FFFFFF"
-        android:textSize="28sp"
-        android:textStyle="bold" />
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:scrollbars="none">
 
-    <TextView
-        android:id="@+id/alarmBody"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:gravity="center"
-        android:text="확인할 일정이 있습니다."
-        android:textColor="#E5E7EB"
-        android:textSize="18sp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
 
+            <LinearLayout
+                android:id="@+id/alarmCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/alarm_card_bg"
+                android:elevation="20dp"
+                android:orientation="vertical"
+                android:padding="26dp">
 
+                <!-- D-Day badge chip -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:background="@drawable/alarm_badge_bg"
+                    android:paddingStart="14dp"
+                    android:paddingTop="5dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="5dp"
+                    android:text="D-Day 알림"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/alarmMemo"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:gravity="center"
-        android:text=""
-        android:textColor="#D1D5DB"
-        android:textSize="16sp"
-        android:visibility="gone" />
+                <!-- Title -->
+                <TextView
+                    android:id="@+id/alarmTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:text="TickDay 알림"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
 
-    <Button
-        android:id="@+id/btnOpen"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="40dp"
-        android:text="확인" />
+                <!-- Body -->
+                <TextView
+                    android:id="@+id/alarmBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:maxLines="3"
+                    android:text="확인할 일정이 있습니다."
+                    android:textColor="#BAC8FF"
+                    android:textSize="15sp"
+                    android:lineSpacingMultiplier="1.4" />
 
-    <Button
-        android:id="@+id/btnClose"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="12dp"
-        android:text="닫기" />
+                <!-- Memo (hidden by default, shown by AlarmActivity when non-empty) -->
+                <TextView
+                    android:id="@+id/alarmMemo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:background="@drawable/alarm_memo_bg"
+                    android:gravity="center"
+                    android:maxLines="5"
+                    android:padding="14dp"
+                    android:text=""
+                    android:textColor="#A5B4FC"
+                    android:textSize="14sp"
+                    android:lineSpacingMultiplier="1.4"
+                    android:visibility="gone" />
 
-</LinearLayout>
+                <!-- Buttons row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnOpen"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/alarm_btn_confirm"
+                        android:stateListAnimator="@null"
+                        android:text="확인"
+                        android:textColor="#FFFFFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <Space
+                        android:layout_width="12dp"
+                        android:layout_height="1dp" />
+
+                    <Button
+                        android:id="@+id/btnClose"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/alarm_btn_close"
+                        android:stateListAnimator="@null"
+                        android:text="닫기"
+                        android:textColor="#FFFFFF"
+                        android:textSize="16sp" />
+
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</FrameLayout>

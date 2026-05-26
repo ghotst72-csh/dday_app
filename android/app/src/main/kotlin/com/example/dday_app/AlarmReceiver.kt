@@ -75,8 +75,8 @@ class AlarmReceiver : BroadcastReceiver() {
         // notificationId는 항상 baseId 고정 — flutter_local_notifications 알림과 같은 ID를
         // 사용해 덮어쓰기(replace)하므로 알림창에 항상 1개만 표시됨
         val baseId = scheduleId?.toIntOrNull() ?: 0
-        val notificationId = baseId
         val requestCode = System.currentTimeMillis().toInt()
+        val notificationId = if (strongAlarmMode) requestCode else baseId
         AlarmTrace.state(AREA, "baseId", baseId)
         AlarmTrace.state(AREA, "notificationId", notificationId)
         AlarmTrace.state(AREA, "requestCode", requestCode)
@@ -93,16 +93,10 @@ class AlarmReceiver : BroadcastReceiver() {
         )
         AlarmTrace.step(AREA, "contentPi created requestCode=${requestCode + 1} target=${if (strongAlarmMode) "AlarmActivity" else "MainActivity"}")
 
-        if (strongAlarmMode) {
-            // 강한 알림 모드: 무음 채널 사용 — 알람 소리는 AlarmActivity.ringtone 한 곳에서만 재생
-            ensureSilentChannel(context)
-            AlarmTrace.step(AREA, "using silent channel id=$SILENT_CHANNEL_ID")
-        } else {
-            ensureChannel(context)
-            AlarmTrace.step(AREA, "using sound channel id=$CHANNEL_ID")
-        }
+        ensureChannel(context)
+        AlarmTrace.step(AREA, "using channel id=$CHANNEL_ID strongAlarmMode=$strongAlarmMode")
 
-        val channelId = if (strongAlarmMode) SILENT_CHANNEL_ID else CHANNEL_ID
+        val channelId = CHANNEL_ID
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
@@ -119,7 +113,6 @@ class AlarmReceiver : BroadcastReceiver() {
             // The notification itself is silent; AlarmActivity owns ringtone playback.
             builder.setFullScreenIntent(fullScreenPi, true)
             builder.setOngoing(true)
-            builder.setOnlyAlertOnce(true)
             AlarmTrace.step(AREA, "fullScreenIntent enabled by strongAlarmMode")
         } else {
             AlarmTrace.step(AREA, "fullScreenIntent skipped because strongAlarmMode=false")

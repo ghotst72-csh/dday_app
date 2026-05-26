@@ -1,5 +1,8 @@
 package com.forgeapps.tickday
 
+import android.animation.Animator
+import android.animation.AnimatorInflater
+import android.animation.AnimatorSet
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -25,6 +28,7 @@ class AlarmActivity : Activity() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var ringtone: Ringtone? = null
     private var currentScheduleId: String? = null
+    private val uiAnimators = mutableListOf<Animator>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +56,7 @@ class AlarmActivity : Activity() {
         val openButton = findViewById<Button>(R.id.btnOpen)
         val closeButton = findViewById<Button>(R.id.btnClose)
 
+        startUiAnimations(openButton)
         bindAlarmViews(intent)
 
         val strongAlarmMode = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
@@ -181,6 +186,30 @@ class AlarmActivity : Activity() {
         }
     }
 
+    private fun startUiAnimations(confirmBtn: Button) {
+        try {
+            val glowPurple = findViewById<View>(R.id.glowPurple)
+            val glowBlue = findViewById<View>(R.id.glowBlue)
+            val alarmCard = findViewById<View>(R.id.alarmCard)
+
+            // Card starts invisible so entrance animation has clean starting state
+            alarmCard.alpha = 0f
+
+            AnimatorInflater.loadAnimator(this, R.animator.alarm_glow_breathe).also {
+                it.setTarget(glowPurple); it.start(); uiAnimators.add(it)
+            }
+            AnimatorInflater.loadAnimator(this, R.animator.alarm_glow_breathe_alt).also {
+                it.setTarget(glowBlue); it.start(); uiAnimators.add(it)
+            }
+            (AnimatorInflater.loadAnimator(this, R.animator.alarm_card_enter) as AnimatorSet).also {
+                it.setTarget(alarmCard); it.start(); uiAnimators.add(it)
+            }
+            AnimatorInflater.loadAnimator(this, R.animator.alarm_btn_pulse).also {
+                it.setTarget(confirmBtn); it.start(); uiAnimators.add(it)
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun stopRingtone() {
         try { ringtone?.stop() } catch (_: Exception) {}
         ringtone = null
@@ -190,6 +219,8 @@ class AlarmActivity : Activity() {
     override fun onDestroy() {
         AlarmTrace.enter(AREA, "onDestroy")
         stopRingtone()
+        uiAnimators.forEach { it.cancel() }
+        uiAnimators.clear()
         wakeLock?.let {
             if (it.isHeld) it.release()
         }

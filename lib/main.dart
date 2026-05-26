@@ -488,194 +488,313 @@ class _FullScreenNotificationWidget extends StatefulWidget {
 }
 
 class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
+    with TickerProviderStateMixin {
+  late AnimationController _entryController;
+  late AnimationController _bgController;
+  late Animation<double> _fadeAnim;
+  late Animation<double> _scaleAnim;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 320),
+    _entryController = AnimationController(
+      duration: const Duration(milliseconds: 380),
       vsync: this,
     );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    _fadeAnim = CurvedAnimation(parent: _entryController, curve: Curves.easeOut);
+    _scaleAnim = Tween<double>(begin: 0.88, end: 1.0).animate(
+      CurvedAnimation(parent: _entryController, curve: Curves.easeOutBack),
     );
-    _scaleAnimation = Tween<double>(begin: 0.92, end: 1).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack),
+    _entryController.forward();
+
+    _bgController = AnimationController(
+      duration: const Duration(seconds: 5),
+      vsync: this,
     );
-    _animationController.forward();
+    _bgController.repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _entryController.dispose();
+    _bgController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final titleText = _overlayText(context, 'title');
-    final descriptionText = _overlayText(context, 'body');
-
     return FadeTransition(
-      opacity: _fadeAnimation,
+      opacity: _fadeAnim,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {},
-        child: SafeArea(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Container(
-                    color: Colors.black.withOpacity(0.60),
+        child: AnimatedBuilder(
+          animation: _bgController,
+          builder: (context, child) {
+            final t = _bgController.value;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                // Aurora gradient background
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment(-1.0 + t * 0.5, -1.0),
+                      end: Alignment(1.0, 1.0 - t * 0.4),
+                      colors: [
+                        Color.lerp(const Color(0xFF080D1C), const Color(0xFF130820), t)!,
+                        Color.lerp(const Color(0xFF0D1230), const Color(0xFF0A1530), t)!,
+                        Color.lerp(const Color(0xFF060A18), const Color(0xFF0A0E1F), t)!,
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Center(
-                child: ScaleTransition(
-                  scale: _scaleAnimation,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 360),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF101828),
-                        borderRadius: BorderRadius.circular(28),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.55),
-                            blurRadius: 42,
-                            offset: const Offset(0, 20),
+                // Top-left purple glow
+                Positioned(
+                  top: -60 + t * 25,
+                  left: -60 + t * 15,
+                  child: _buildGlow(220,
+                    Color.lerp(const Color(0xFF7C3AED), const Color(0xFF4F46E5), t)!
+                        .withOpacity(0.38 + t * 0.08)),
+                ),
+                // Bottom-right blue glow
+                Positioned(
+                  bottom: -50 + t * 18,
+                  right: -50 - t * 18,
+                  child: _buildGlow(200,
+                    Color.lerp(const Color(0xFF0EA5E9), const Color(0xFF06B6D4), t)!
+                        .withOpacity(0.30 + t * 0.10)),
+                ),
+                // Bottom-left teal accent
+                Positioned(
+                  bottom: 80 - t * 18,
+                  left: 10 + t * 12,
+                  child: _buildGlow(130,
+                    Color.lerp(const Color(0xFF10B981), const Color(0xFF0D9488), t)!
+                        .withOpacity(0.20 + t * 0.08)),
+                ),
+                child!,
+              ],
+            );
+          },
+          child: SafeArea(
+            child: Center(
+              child: ScaleTransition(
+                scale: _scaleAnim,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(28),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                const Color(0xFF1C2140).withOpacity(0.90),
+                                const Color(0xFF0F1525).withOpacity(0.90),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.12),
+                              width: 1,
+                            ),
                           ),
-                        ],
-                        border: Border.all(color: Colors.white.withOpacity(0.10), width: 1),
-                      ),
-                      padding: const EdgeInsets.fromLTRB(26, 26, 26, 26),
-                      child: Column(
+                          padding: const EdgeInsets.fromLTRB(26, 30, 26, 26),
+                          child: Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
+                              // Pulsing bell icon
+                              AnimatedBuilder(
+                                animation: _bgController,
+                                builder: (context, _) => Container(
+                                  width: 72,
+                                  height: 72,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: RadialGradient(colors: [
+                                      Color.lerp(const Color(0xFF7C3AED), const Color(0xFF4F46E5),
+                                          _bgController.value)!.withOpacity(0.28),
+                                      Colors.transparent,
+                                    ]),
+                                    border: Border.all(
+                                      color: Color.lerp(const Color(0xFF818CF8), const Color(0xFF60A5FA),
+                                          _bgController.value)!.withOpacity(0.55),
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Color.lerp(const Color(0xFF7C3AED), const Color(0xFF4F46E5),
+                                            _bgController.value)!.withOpacity(0.35),
+                                        blurRadius: 18,
+                                        spreadRadius: 2,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    Icons.notifications_active_rounded,
+                                    color: Color.lerp(const Color(0xFF60A5FA), const Color(0xFFA78BFA),
+                                        _bgController.value),
+                                    size: 32,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              // Badge chip
                               Container(
-                                width: 72,
-                                height: 72,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.08),
-                                  shape: BoxShape.circle,
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF7C3AED), Color(0xFF2563EB)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.white.withOpacity(0.08),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 12),
+                                      color: const Color(0xFF7C3AED).withOpacity(0.40),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
                                     ),
                                   ],
                                 ),
-                                child: const Icon(
-                                  Icons.alarm,
-                                  color: Color(0xFF60A5FA),
-                                  size: 34,
-                                ),
-                              ),
-                              const SizedBox(height: 22),
-                              const Text(
-                                'D-0',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  decoration: TextDecoration.none,
-                                  fontSize: 64,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: -1.6,
+                                child: const Text(
+                                  'D-Day 알림',
+                                  style: TextStyle(
+                                    decoration: TextDecoration.none,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    letterSpacing: 0.4,
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              if (titleText.isNotEmpty) ...[
+                              // Title
+                              if (widget.title.isNotEmpty) ...[
                                 Text(
-                                  titleText,
+                                  widget.title,
                                   textAlign: TextAlign.center,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     decoration: TextDecoration.none,
                                     fontSize: 22,
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w800,
                                     color: Colors.white,
+                                    height: 1.3,
                                   ),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 10),
                               ],
-                              const SizedBox(height: 0),
-                              Text(
-                                descriptionText,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  decoration: TextDecoration.none,
-                                  fontSize: 15,
-                                  height: 1.6,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFFBAC8FF),
+                              // Body (shown only when non-empty)
+                              if (widget.body.isNotEmpty)
+                                Text(
+                                  widget.body,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    decoration: TextDecoration.none,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.white.withOpacity(0.68),
+                                    height: 1.55,
+                                  ),
                                 ),
-                              ),
-                              // No additional body text (remove developer test strings)
-                              const SizedBox(height: 26),
+                              const SizedBox(height: 28),
+                              // Buttons
                               Row(
                                 children: [
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: widget.onConfirm,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF7C3AED),
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(16),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        elevation: 0,
-                                      ),
-                                      child: Text(
-                                        _overlayText(context, 'confirm'),
-                                        style: TextStyle(
-                                          decoration: TextDecoration.none,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: widget.onClose,
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(color: Colors.white.withOpacity(0.18)),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                  ),
-                                  child: Text(
-                                    _overlayText(context, 'close'),
-                                    style: TextStyle(
-                                      decoration: TextDecoration.none,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
+                                  Expanded(child: _buildConfirmButton(context)),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: _buildCloseButton(context)),
+                                ],
                               ),
                             ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlow(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(colors: [color, Colors.transparent]),
+      ),
+    );
+  }
+
+  Widget _buildConfirmButton(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onConfirm,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7C3AED), Color(0xFF4F46E5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF7C3AED).withOpacity(0.45),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            _overlayText(context, 'confirm'),
+            style: const TextStyle(
+              decoration: TextDecoration.none,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCloseButton(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onClose,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.20), width: 1),
+          color: Colors.white.withOpacity(0.07),
+        ),
+        child: Center(
+          child: Text(
+            _overlayText(context, 'close'),
+            style: const TextStyle(
+              decoration: TextDecoration.none,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
           ),
         ),
       ),
