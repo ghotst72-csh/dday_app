@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="alarm_badge">D-Day 알림</string>
+    <string name="alarm_confirm">확인</string>
+    <string name="alarm_close">닫기</string>
+
+</resources>

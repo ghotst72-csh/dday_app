@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="alarm_badge">D-Day通知</string>
+    <string name="alarm_confirm">確認</string>
+    <string name="alarm_close">閉じる</string>
+
+</resources>

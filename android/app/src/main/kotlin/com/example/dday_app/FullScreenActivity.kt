@@ -1,7 +1,9 @@
-package com.forgeapps.tickday
+package com.example.dday_app
 
 import android.app.Activity
 import android.app.KeyguardManager
+import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.graphics.Color
@@ -12,14 +14,39 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.content.Intent
+import com.forgeapps.tickday.R
+import java.util.Locale
 
 class FullScreenActivity : Activity() {
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(applyAppLocale(newBase))
+    }
+
+    private fun applyAppLocale(context: Context): Context {
+        val prefs = context.getSharedPreferences(
+            "FlutterSharedPreferences", Context.MODE_PRIVATE
+        )
+        val code = prefs.getString("flutter.tickday_locale", null) ?: return context
+        val locale = when (code) {
+            "ko" -> Locale("ko", "KR")
+            "en" -> Locale("en", "US")
+            "ja" -> Locale("ja", "JP")
+            "vi" -> Locale("vi", "VN")
+            else -> return context
+        }
+        Locale.setDefault(locale)
+        val config = Configuration(context.resources.configuration)
+        config.setLocale(locale)
+        return context.createConfigurationContext(config)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableLockScreenDisplay()
         super.onCreate(savedInstanceState)
 
         val title = intent.getStringExtra("title") ?: "TickDay"
-        val body = intent.getStringExtra("body") ?: "중요한 일정 알림이에요"
+        val body = intent.getStringExtra("body") ?: ""
         val payload = intent.getStringExtra("payload")
 
         val root = LinearLayout(this).apply {
@@ -38,7 +65,7 @@ class FullScreenActivity : Activity() {
         }
 
         val dday = TextView(this).apply {
-            text = "D-Day"
+            text = getString(R.string.alarm_badge)
             textSize = 56f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
@@ -64,7 +91,7 @@ class FullScreenActivity : Activity() {
         }
 
         val confirmButton = Button(this).apply {
-            text = "확인하기"
+            text = getString(R.string.alarm_confirm)
             textSize = 17f
             setOnClickListener {
                 val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
@@ -80,7 +107,7 @@ class FullScreenActivity : Activity() {
         }
 
         val closeButton = Button(this).apply {
-            text = "닫기"
+            text = getString(R.string.alarm_close)
             textSize = 17f
             setOnClickListener { finish() }
         }

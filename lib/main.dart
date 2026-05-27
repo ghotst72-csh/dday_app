@@ -418,20 +418,40 @@ class NativeAlarmService {
 class FullScreenNotificationOverlay {
   static OverlayEntry? _currentEntry;
 
-  static void show({
+  static Future<void> show({
     required String title,
     required String body,
     Duration dismissDuration = const Duration(seconds: 5),
     VoidCallback? onConfirm,
     VoidCallback? onClose,
-  }) {
+  }) async {
     _currentEntry?.remove();
     _currentEntry = null;
+
+    // locale 확정: notifier가 null이면 SharedPreferences에서 직접 읽음
+    // (앱 시작 직후 async 초기화 전에 show()가 호출되는 경우 대비)
+    Locale locale = appLocaleNotifier.value ?? const Locale('ko', 'KR');
+    if (appLocaleNotifier.value == null) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final code = prefs.getString(_localePrefsKey);
+        if (code != null) {
+          locale = _localeFromCode(code) ?? locale;
+        }
+      } catch (_) {}
+    }
+    final l = L(locale);
+    final badge = l.pick(ko: 'D-Day 알림', en: 'D-Day Reminder', ja: 'D-Day通知', vi: 'Nhắc D-day');
+    final confirmLabel = l.pick(ko: '확인하기', en: 'Confirm', ja: '확인', vi: 'Xác nhận');
+    final closeLabel = l.pick(ko: '닫기', en: 'Close', ja: '閉じる', vi: 'Đóng');
 
     _currentEntry = OverlayEntry(
       builder: (context) => _FullScreenNotificationWidget(
         title: title,
         body: body,
+        badge: badge,
+        confirmLabel: confirmLabel,
+        closeLabel: closeLabel,
         onConfirm: onConfirm ?? dismiss,
         onClose: onClose ?? dismiss,
       ),
@@ -473,12 +493,18 @@ class FullScreenNotificationOverlay {
 class _FullScreenNotificationWidget extends StatefulWidget {
   final String title;
   final String body;
+  final String badge;
+  final String confirmLabel;
+  final String closeLabel;
   final VoidCallback onConfirm;
   final VoidCallback onClose;
 
   const _FullScreenNotificationWidget({
     required this.title,
     required this.body,
+    required this.badge,
+    required this.confirmLabel,
+    required this.closeLabel,
     required this.onConfirm,
     required this.onClose,
   });
@@ -662,9 +688,9 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
                                     ),
                                   ],
                                 ),
-                                child: const Text(
-                                  'D-Day 알림',
-                                  style: TextStyle(
+                                child: Text(
+                                  widget.badge,
+                                  style: const TextStyle(
                                     decoration: TextDecoration.none,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -763,7 +789,7 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
         ),
         child: Center(
           child: Text(
-            _overlayText(context, 'confirm'),
+            widget.confirmLabel,
             style: const TextStyle(
               decoration: TextDecoration.none,
               fontSize: 16,
@@ -788,7 +814,7 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
         ),
         child: Center(
           child: Text(
-            _overlayText(context, 'close'),
+            widget.closeLabel,
             style: const TextStyle(
               decoration: TextDecoration.none,
               fontSize: 16,
@@ -804,8 +830,10 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
 
 
 String _overlayText(BuildContext context, String key) {
-  final l = L.of(context);
+  final locale = appLocaleNotifier.value ?? Localizations.localeOf(context);
+  final l = L(locale);
   switch (key) {
+    case 'badge': return l.pick(ko:'D-Day 알림', en:'D-Day Reminder', ja:'D-Day通知', vi:'Nhắc D-day');
     case 'title': return l.pick(ko:'알림 미리보기', en:'Notification Preview', ja:'通知プレビュー', vi:'Xem trước thông báo');
     case 'body': return l.pick(ko:'오늘의 중요한 일정을 놓치지 마세요', en:"Don't miss today's important schedule", ja:'今日の大切な予定を見逃さないでください', vi:'Đừng bỏ lỡ lịch trình quan trọng hôm nay');
     case 'confirm': return l.pick(ko:'확인하기', en:'Confirm', ja:'確認', vi:'Xác nhận');
@@ -2156,15 +2184,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // ⚠️ 풀스크린 알림 플래그 감지 (1차 안전버전, 테스트용)
     if (payload == '__fullscreen_test__' || payload == '__fullscreen_auto__') {
       FullScreenNotificationOverlay.setContext(context);
-      FullScreenNotificationOverlay.show(
-        title: '알림 미리보기',
+      final _l = L(appLocaleNotifier.value ?? const Locale('ko', 'KR'));
+      unawaited(FullScreenNotificationOverlay.show(
+        title: _l.pick(ko: '알림 미리보기', en: 'Notification Preview', ja: '通知プレビュー', vi: 'Xem trước thông báo'),
         body: '',
         dismissDuration: const Duration(seconds: 5),
         onClose: () {
           _pendingNotificationItemId = null;
           FullScreenNotificationOverlay.dismissWithoutPendingOpen();
         },
-      );
+      ));
       return;
     }
     if (payload.startsWith('__alarm__:')) {
