@@ -6,6 +6,7 @@ import android.animation.AnimatorSet
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
@@ -18,11 +19,27 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
+import java.util.Locale
 
 class AlarmActivity : Activity() {
 
     companion object {
         private const val AREA = "Activity"
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        val prefs = newBase.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val langCode = prefs.getString("flutter.tickday_locale", null)
+        if (langCode != null) {
+            val locale = Locale(langCode)
+            val config = Configuration(newBase.resources.configuration)
+            config.setLocale(locale)
+            AlarmTrace.step(AREA, "attachBaseContext: applying locale=$langCode")
+            super.attachBaseContext(newBase.createConfigurationContext(config))
+        } else {
+            AlarmTrace.step(AREA, "attachBaseContext: no stored locale, using system default")
+            super.attachBaseContext(newBase)
+        }
     }
 
     private var wakeLock: PowerManager.WakeLock? = null

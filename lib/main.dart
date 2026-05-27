@@ -3702,7 +3702,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
             const Padding(
               padding: EdgeInsets.only(bottom: 16),
-              child: Text('Version 1.0.0', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF9CA3AF))),
+              child: Text('Version 1.0.4', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF9CA3AF))),
             ),
           ],
         ),
@@ -4177,7 +4177,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     showAboutDialog(
       context: context,
       applicationName: 'TickDay',
-      applicationVersion: '1.0.0',
+      applicationVersion: '1.0.4',
       applicationIcon: Container(
         width: 48,
         height: 48,
