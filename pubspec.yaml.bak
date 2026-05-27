@@ -2,7 +2,7 @@ name: dday_app
 description: "TickDay - Countdown & Reminder"
 publish_to: 'none'
 
-version: 1.0.4+6
+version: 1.0.4+5
 
 environment:
   sdk: ^3.11.5
