@@ -74,7 +74,8 @@ class MainActivity : FlutterActivity() {
                     val body = call.argument<String?>("body")
                     val itemId = call.argument<String?>("itemId")
                     val memo = call.argument<String?>("memo")
-                    AlarmTrace.enter("MainActivity", "scheduleAlarm alarmId=$alarmId triggerAtMillis=$triggerAtMillis itemId=$itemId memo=${memo ?: "null"}")
+                    val strong = call.argument<Boolean>("strong") ?: false
+                    AlarmTrace.enter("MainActivity", "scheduleAlarm alarmId=$alarmId triggerAtMillis=$triggerAtMillis itemId=$itemId memo=${memo ?: "null"} strong=$strong")
                     if (itemId != null) {
                         getSharedPreferences("tickday_alarms", MODE_PRIVATE)
                             .edit().putString("item_id_$alarmId", itemId).apply()
@@ -85,6 +86,7 @@ class MainActivity : FlutterActivity() {
                         putExtra("title", title)
                         putExtra("body", body)
                         if (memo != null) putExtra("memo", memo)
+                        putExtra("strong_alarm", strong)
                     }
                     val pendingIntent = PendingIntent.getBroadcast(this, alarmId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                     AlarmTrace.step("MainActivity", "pendingIntent created alarmId=$alarmId")

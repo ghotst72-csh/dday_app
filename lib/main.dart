@@ -288,7 +288,12 @@ class NotificationService {
 
     // 같은 ID로 이미 예약된 알림이 남아 있으면 기기/OS에 따라 새 예약이
     // 씹히는 경우가 있어 먼저 취소 후 다시 예약합니다.
-    await _plugin.cancel(id);
+    try {
+      await _plugin.cancel(id);
+    } catch (e, s) {
+      debugPrint('[TickDayAlarm] cancel failed id=$id: $e');
+      debugPrintStack(stackTrace: s);
+    }
 
     final scheduled = tz.TZDateTime.from(scheduledAt, tz.local);
     final details = fullScreen ? _detailsFullScreen : _details;
@@ -343,7 +348,14 @@ class NotificationService {
     }
   }
 
-  static Future<void> cancel(int id) async => _plugin.cancel(id);
+  static Future<void> cancel(int id) async {
+    try {
+      await _plugin.cancel(id);
+    } catch (e, s) {
+      debugPrint('[TickDayAlarm] cancel failed id=$id: $e');
+      debugPrintStack(stackTrace: s);
+    }
+  }
 
 
   // ⚠️ 테스트용 풀스크린 알림 (1차 안전버전)
@@ -379,9 +391,10 @@ class NativeAlarmService {
     String? body,
     String? itemId,
     String? memo,
+    bool strong = false,
   }) async {
     print('[NativeAlarmService] ENTER scheduleAlarm alarmId=$alarmId');
-    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm alarmId=$alarmId itemId=$itemId memo=${memo != null ? memo.replaceAll("\n", " ") : "null"} scheduledAt=$scheduledAt');
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm alarmId=$alarmId itemId=$itemId memo=${memo != null ? memo.replaceAll("\n", " ") : "null"} scheduledAt=$scheduledAt strong=$strong');
     try {
       await _channel.invokeMethod('scheduleAlarm', {
         'alarmId': alarmId,
@@ -390,6 +403,7 @@ class NativeAlarmService {
         'body': body,
         'itemId': itemId,
         'memo': memo,
+        'strong': strong,
       });
       print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm method channel invoked alarmId=$alarmId');
       // Additional concise logs for requested trace
@@ -4248,6 +4262,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
         itemId: '__fullscreen_test__',
         memo: null,
+        strong: true,
       ));
     }
 

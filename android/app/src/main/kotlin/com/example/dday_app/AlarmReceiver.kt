@@ -42,8 +42,10 @@ class AlarmReceiver : BroadcastReceiver() {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         AlarmTrace.state(AREA, "notifications.enabled", nm.areNotificationsEnabled())
 
-        val strongAlarmMode = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val intentStrong = intent.getBooleanExtra("strong_alarm", false)
+        val strongAlarmMode = intentStrong || context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             .getBoolean("flutter.tickday_strong_alarm_mode", false)
+        AlarmTrace.state(AREA, "intentStrong", intentStrong)
         AlarmTrace.state(AREA, "strongAlarmMode", strongAlarmMode)
 
         val alarmIntent = Intent(context, AlarmActivity::class.java).apply {
