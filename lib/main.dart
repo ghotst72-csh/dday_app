@@ -14,6 +14,7 @@ import 'package:app_settings/app_settings.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -4730,13 +4731,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _roundButton(Icons.menu, () => _scaffoldKey.currentState?.openDrawer()),
             const SizedBox(width: 14),
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(L.of(context).appTitle, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Color(0xFF111827), letterSpacing: -0.8)),
-                  SizedBox(height: 2),
-                  Text(L.of(context).subtitle, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+                  Image.asset(
+                    'assets/logo_tickday.png',
+                    height: 64,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          L.of(context).appTitle,
+                          style: GoogleFonts.alfaSlabOne(
+                            fontSize: 28,
+                            color: const Color(0xFFC0392B),
+                            letterSpacing: 0.5,
+                            shadows: const [
+                              Shadow(color: Color(0x33000000), offset: Offset(1, 1.5), blurRadius: 2),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          L.of(context).subtitle,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
