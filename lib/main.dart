@@ -2863,26 +2863,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     final nTitle = L.of(context).pick(ko: 'D-day 알림: ${item.title}', en: 'D-day reminder: ${item.title}', ja: 'D-day通知: ${item.title}', vi: 'Nhắc D-day: ${item.title}');
     final nBody = '$bodyPrefix · ${_fullDate(plan.target)} ${_timeText(TimeOfDay.fromDateTime(plan.target))}';
+    // strong mode: fullScreen=true skips zonedSchedule (release-safe, mirrors test button path)
+    // normal mode: fullScreen=false → zonedSchedule attempted
     final scheduled = await NotificationService.schedule(
       id: notificationId,
       title: nTitle,
       body: nBody,
       scheduledAt: plan.alarmAt,
       payload: '__alarm__:${item.id}',
-      fullScreen: false,
+      fullScreen: _strongAlarmMode,
     );
-    if (scheduled) {
-      // FOR TESTING: temporarily await native scheduling so logs are visible
-      await NativeAlarmService.scheduleAlarm(
-        alarmId: notificationId,
-        scheduledAt: plan.alarmAt,
-        title: nTitle,
-        body: nBody,
-        itemId: item.id,
-        memo: item.memo,
-      );
-    }
-    return scheduled;
+    // Always call native alarm regardless of Flutter zonedSchedule result.
+    // In release builds zonedSchedule may fail; native AlarmManager is the reliable path.
+    await NativeAlarmService.scheduleAlarm(
+      alarmId: notificationId,
+      scheduledAt: plan.alarmAt,
+      title: nTitle,
+      body: nBody,
+      itemId: item.id,
+      memo: item.memo,
+      strong: _strongAlarmMode,
+    );
+    return scheduled || _strongAlarmMode;
   }
 
   Future<void> _deleteItem(DdayItem item) async {
