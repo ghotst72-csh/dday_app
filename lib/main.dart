@@ -4649,6 +4649,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: const Icon(Icons.add, size: 25),
           ),
         ),
+	/*
         bottomNavigationBar: (_isBannerAdReady && _bannerAd != null)
             ? SafeArea(
                 top: false,
@@ -4661,6 +4662,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               )
             : null,
+	    */
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async {
