@@ -145,8 +145,6 @@ class L {
   // ── Onboarding ──────────────────────────────────────────────
   String get onboardingSkip => pick(ko: '건너뛰기', en: 'Skip', ja: 'スキップ', vi: 'Bỏ qua');
   String get onboardingGetStarted => pick(ko: '시작하기', en: 'Get Started', ja: '始める', vi: 'Bắt đầu');
-  String get onboardingClose => pick(ko: '닫기', en: 'Close', ja: '閉じる', vi: 'Đóng');
-  String get onboardingHelpMenu => pick(ko: 'Bella 도움말', en: 'Bella Help', ja: 'Bellaヘルプ', vi: 'Trợ giúp Bella');
 
   // Page 1
   String get onboarding1Title => pick(ko: '안녕하세요!', en: 'Hello!', ja: 'こんにちは！', vi: 'Xin chào!');
@@ -1995,29 +1993,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Drawer "Bella 도움말" 진입점 — 플래그 저장 없음, 건너뛰기 숨김
-  Future<void> _showBellaHelp() async {
-    if (!mounted) return;
-    await Navigator.of(context).push<void>(
-      PageRouteBuilder<void>(
-        opaque: false,
-        barrierColor: Colors.black.withOpacity(0.45),
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return FadeTransition(
-            opacity: animation,
-            child: BellaOnboardingScreen(
-              isHelpMode: true,
-              onDone: () async {
-                if (context.mounted) Navigator.of(context).pop();
-              },
-            ),
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 260),
-      ),
-    );
-  }
-
 
   Future<void> _maybeShowReviewPrompt() async {
     if (_reviewPromptCheckedThisSession || !mounted) return;
@@ -3669,7 +3644,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   _drawerTile(Icons.widgets_rounded, l.pick(ko: '홈 위젯 추가', en: 'Add home widget', ja: 'ホームウィジェット追加', vi: 'Thêm widget'), () { Navigator.pop(context); _showWidgetPlanSheet(); }),
                   _drawerTile(Icons.notifications_active_rounded, l.pick(ko: '알림 설정', en: 'Reminder settings', ja: '通知設定', vi: 'Cài đặt nhắc nhở'), () { Navigator.pop(context); _showGlobalReminderSettingsSheet(); }),
                   _drawerTile(Icons.language_rounded, l.pick(ko: '언어 설정', en: 'Language', ja: '言語設定', vi: 'Ngôn ngữ'), () { Navigator.pop(context); _showLanguageSheet(); }, trailingText: _languageName(currentCode)),
-                  _drawerTile(Icons.auto_stories_rounded, l.onboardingHelpMenu, () { Navigator.pop(context); unawaited(_showBellaHelp()); }),
                   _drawerTile(
                     Icons.palette_rounded,
                     l.pick(ko: '테마 설정', en: 'Theme', ja: 'テーマ', vi: 'Giao diện'),
@@ -6787,15 +6761,8 @@ class _EditPageState extends State<EditPage> {
 
 class BellaOnboardingScreen extends StatefulWidget {
   final Future<void> Function() onDone;
-  /// true: 도움말 모드 (건너뛰기 숨김, 마지막 버튼 "닫기", 플래그 저장 없음)
-  /// false: 첫 실행 모드 (건너뛰기 표시, 마지막 버튼 "시작하기")
-  final bool isHelpMode;
 
-  const BellaOnboardingScreen({
-    super.key,
-    required this.onDone,
-    this.isHelpMode = false,
-  });
+  const BellaOnboardingScreen({super.key, required this.onDone});
 
   @override
   State<BellaOnboardingScreen> createState() => _BellaOnboardingScreenState();
@@ -6863,8 +6830,7 @@ class _BellaOnboardingScreenState extends State<BellaOnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Skip button (첫 실행 모드에서만 표시) ───────────
-            if (!widget.isHelpMode)
+            // ── Skip button ────────────────────────────────────
             Align(
               alignment: Alignment.centerRight,
               child: Padding(
@@ -6882,9 +6848,6 @@ class _BellaOnboardingScreenState extends State<BellaOnboardingScreen> {
                 ),
               ),
             ),
-            // 도움말 모드에서는 건너뛰기 대신 높이만 확보
-            if (widget.isHelpMode)
-            const SizedBox(height: 48),
 
             // ── PageView ───────────────────────────────────────
             Expanded(
@@ -6941,9 +6904,7 @@ class _BellaOnboardingScreenState extends State<BellaOnboardingScreen> {
                           ),
                         ),
                         child: Text(
-                          widget.isHelpMode
-                              ? l.onboardingClose
-                              : l.onboardingGetStarted,
+                          l.onboardingGetStarted,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
