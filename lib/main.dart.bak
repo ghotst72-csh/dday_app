@@ -1883,7 +1883,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _reviewPromptCheckedThisSession = false;
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
-  static const String _bannerAdUnitId = 'ca-app-pub-9908025081225328/9987865372';
+  static const String _testBannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
 
   @override
   void initState() {
@@ -1933,12 +1933,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _loadBannerAd() {
     final banner = BannerAd(
-      adUnitId: _bannerAdUnitId,
+      adUnitId: _testBannerAdUnitId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (ad) {
-          debugPrint('[TickDayAd] Banner loaded');
           if (!mounted) {
             ad.dispose();
             return;
@@ -1949,7 +1948,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           });
         },
         onAdFailedToLoad: (ad, error) {
-          debugPrint('[TickDayAd] Banner failed: code=${error.code} message=${error.message}');
           ad.dispose();
           if (!mounted) return;
           setState(() {
@@ -4637,7 +4635,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: const Icon(Icons.add, size: 25),
           ),
         ),
-	
+	/*
         bottomNavigationBar: (_isBannerAdReady && _bannerAd != null)
             ? SafeArea(
                 top: false,
@@ -4650,7 +4648,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               )
             : null,
-	    
+	    */
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async {
