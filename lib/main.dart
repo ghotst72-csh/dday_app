@@ -141,6 +141,46 @@ class L {
   String get todayIsTheDay => pick(ko: '오늘이 바로 그날이에요', en: 'Today is the day', ja: '今日はその日です', vi: 'Hôm nay là ngày đó');
   String get slowlyPrepare => pick(ko: '천천히 준비해요 🌿', en: 'Take your time preparing 🌿', ja: 'ゆっくり準備しましょう 🌿', vi: 'Cứ từ từ chuẩn bị 🌿');
   String get almostThere => pick(ko: '곧 만날 순간이에요 💜', en: 'The moment is almost here 💜', ja: 'もうすぐその瞬間です 💜', vi: 'Khoảnh khắc ấy sắp đến rồi 💜');
+
+  // ── Onboarding ──────────────────────────────────────────────
+  String get onboardingSkip => pick(ko: '건너뛰기', en: 'Skip', ja: 'スキップ', vi: 'Bỏ qua');
+  String get onboardingGetStarted => pick(ko: '시작하기', en: 'Get Started', ja: '始める', vi: 'Bắt đầu');
+
+  // Page 1
+  String get onboarding1Title => pick(ko: '안녕하세요!', en: 'Hello!', ja: 'こんにちは！', vi: 'Xin chào!');
+  String get onboarding1Body => pick(
+        ko: '저는 TickDay의 Bella예요.\n소중한 날을 잊지 않도록 도와드릴게요.',
+        en: "I'm Bella from TickDay.\nI'll help you remember your important days.",
+        ja: '私はTickDayのベラです。\n大切な日を忘れないようお手伝いします。',
+        vi: 'Tôi là Bella của TickDay.\nTôi sẽ giúp bạn không bỏ lỡ những ngày quan trọng.',
+      );
+
+  // Page 2
+  String get onboarding2Title => pick(ko: '강한 알림', en: 'Powerful Alerts', ja: '強力な通知', vi: 'Thông báo mạnh mẽ');
+  String get onboarding2Body => pick(
+        ko: '중요한 일정은 화면 전체 알림으로 알려드릴 수 있어요.',
+        en: 'Important events can be shown as full-screen alerts.',
+        ja: '重要な予定は全画面通知でお知らせできます。',
+        vi: 'Những sự kiện quan trọng có thể được hiển thị bằng thông báo toàn màn hình.',
+      );
+
+  // Page 3
+  String get onboarding3Title => pick(ko: '홈 화면 위젯', en: 'Home Screen Widget', ja: 'ホーム画面ウィジェット', vi: 'Tiện ích màn hình chính');
+  String get onboarding3Body => pick(
+        ko: '가장 가까운 D-Day를 홈 화면에서 바로 확인하세요.',
+        en: 'Check your nearest D-Day directly from your home screen.',
+        ja: '最も近いD-Dayをホーム画面ですぐ確認できます。',
+        vi: 'Xem ngày D-Day gần nhất ngay trên màn hình chính.',
+      );
+
+  // Page 4
+  String get onboarding4Title => pick(ko: '준비 완료', en: "You're Ready", ja: '準備完了', vi: 'Sẵn sàng');
+  String get onboarding4Body => pick(
+        ko: '이제 TickDay를 시작해보세요.',
+        en: "Let's start using TickDay.",
+        ja: 'さあ、TickDayを始めましょう。',
+        vi: 'Hãy bắt đầu sử dụng TickDay.',
+      );
 }
 
 
@@ -1930,124 +1970,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     final alreadySeen = prefs.getBool(_firstGuideSeenPrefsKey) ?? false;
     if (alreadySeen || !mounted) return;
-    await prefs.setBool(_firstGuideSeenPrefsKey, true);
-    await Future<void>.delayed(const Duration(milliseconds: 450));
+    await Future<void>.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
-    _showFirstGuideDialog();
-  }
-
-  void _showFirstGuideDialog() {
-    final l = L.of(context);
-    showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'first-guide',
-      barrierColor: Colors.black.withOpacity(0.38),
-      transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        Widget guideItem(IconData icon, String title, String subtitle) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(14)),
-                child: Icon(icon, size: 21, color: const Color(0xFF111827)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Color(0xFF111827))),
-                    const SizedBox(height: 3),
-                    Text(subtitle, style: const TextStyle(fontSize: 12.5, height: 1.35, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
-                  ],
-                ),
-              ),
-            ],
-          );
-        }
-
-        return SafeArea(
-          child: Center(
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                width: math.min(MediaQuery.of(dialogContext).size.width - 36, 360),
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.20), blurRadius: 30, offset: const Offset(0, 16))],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(16)),
-                          child: const Icon(Icons.event_available_rounded, color: Colors.white, size: 24),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            l.pick(ko: 'TickDay 빠른 안내', en: 'Quick TickDay guide', ja: 'TickDay クイックガイド', vi: 'Hướng dẫn nhanh TickDay'),
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF111827), letterSpacing: -0.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    guideItem(
-                      Icons.add_rounded,
-                      l.pick(ko: '+ 버튼', en: '+ button', ja: '＋ボタン', vi: 'Nút +'),
-                      l.pick(ko: '새 일정을 직접 등록해요.', en: 'Add a new event manually.', ja: '新しい予定を直接追加できます。', vi: 'Thêm sự kiện mới thủ công.'),
-                    ),
-                    const SizedBox(height: 14),
-                    guideItem(
-                      Icons.bolt_rounded,
-                      l.pick(ko: '번개 버튼', en: 'Lightning button', ja: '稲妻ボタン', vi: 'Nút tia chớp'),
-                      l.pick(ko: '빠른 추가, 알림 확인, 위젯 추가를 한 번에 열어요.', en: 'Open quick add, notification check, and widgets.', ja: 'クイック追加、通知確認、ウィジェット追加を開けます。', vi: 'Mở thêm nhanh, kiểm tra thông báo và widget.'),
-                    ),
-                    const SizedBox(height: 14),
-                    guideItem(
-                      Icons.widgets_outlined,
-                      l.pick(ko: '홈 위젯', en: 'Home widget', ja: 'ホームウィジェット', vi: 'Widget màn hình chính'),
-                      l.pick(ko: '중요한 D-day를 홈 화면에서 바로 확인해요.', en: 'Check important D-days from your home screen.', ja: '大切なD-dayをホーム画面で確認できます。', vi: 'Xem D-day quan trọng ngay trên màn hình chính.'),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                        ),
-                        child: Text(l.pick(ko: '시작하기', en: 'Got it', ja: '始める', vi: 'Đã hiểu'), style: const TextStyle(fontWeight: FontWeight.w900)),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: Text(l.pick(ko: '건너뛰기', en: 'Skip', ja: 'スキップ', vi: 'Bỏ qua'), style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6B7280))),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    await Navigator.of(context).push<void>(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black.withOpacity(0.45),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FadeTransition(
+            opacity: animation,
+            child: BellaOnboardingScreen(
+              onDone: () async {
+                final p = await SharedPreferences.getInstance();
+                await p.setBool(_firstGuideSeenPrefsKey, true);
+                if (context.mounted) Navigator.of(context).pop();
+              },
             ),
-          ),
-        );
-      },
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 260),
+      ),
     );
   }
 
@@ -6808,6 +6750,258 @@ class _EditPageState extends State<EditPage> {
                 : null,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// Bella Onboarding
+// ──────────────────────────────────────────────────────────────
+
+class BellaOnboardingScreen extends StatefulWidget {
+  final Future<void> Function() onDone;
+
+  const BellaOnboardingScreen({super.key, required this.onDone});
+
+  @override
+  State<BellaOnboardingScreen> createState() => _BellaOnboardingScreenState();
+}
+
+class _BellaOnboardingScreenState extends State<BellaOnboardingScreen> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+  bool _finishing = false;
+
+  static const _totalPages = 4;
+
+  static const _images = [
+    'assets/onboarding/bella_welcome.png',
+    'assets/onboarding/bella_bell.png',
+    'assets/onboarding/bella_widget.png',
+    'assets/onboarding/bella_ready.png',
+  ];
+
+  void _goNext() {
+    if (_currentPage < _totalPages - 1) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Future<void> _finish() async {
+    if (_finishing || !mounted) return;
+    setState(() => _finishing = true);
+    await widget.onDone();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+
+    final titles = [
+      l.onboarding1Title,
+      l.onboarding2Title,
+      l.onboarding3Title,
+      l.onboarding4Title,
+    ];
+    final bodies = [
+      l.onboarding1Body,
+      l.onboarding2Body,
+      l.onboarding3Body,
+      l.onboarding4Body,
+    ];
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) unawaited(_finish());
+      },
+      child: Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Skip button ────────────────────────────────────
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8, right: 16),
+                child: TextButton(
+                  onPressed: _finishing ? null : _finish,
+                  child: Text(
+                    l.onboardingSkip,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── PageView ───────────────────────────────────────
+            Expanded(
+              child: PageView.builder(
+                controller: _pageController,
+                onPageChanged: (index) => setState(() => _currentPage = index),
+                itemCount: _totalPages,
+                itemBuilder: (context, index) {
+                  return _BellaPage(
+                    imagePath: _images[index],
+                    title: titles[index],
+                    body: bodies[index],
+                  );
+                },
+              ),
+            ),
+
+            // ── Dot indicator ──────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(_totalPages, (i) {
+                  final selected = i == _currentPage;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    width: selected ? 20 : 7,
+                    height: 7,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFF111827)
+                          : const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
+            // ── Bottom action ──────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+              child: SizedBox(
+                width: double.infinity,
+                child: _currentPage == _totalPages - 1
+                    ? FilledButton(
+                        onPressed: _finishing ? null : _finish,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF111827),
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: Text(
+                          l.onboardingGetStarted,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      )
+                    : FilledButton(
+                        onPressed: _goNext,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF111827),
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      ), // PopScope
+    );
+  }
+}
+
+class _BellaPage extends StatelessWidget {
+  final String imagePath;
+  final String title;
+  final String body;
+
+  const _BellaPage({
+    required this.imagePath,
+    required this.title,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Bella image
+          Image.asset(
+            imagePath,
+            width: 240,
+            height: 240,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: const Icon(
+                Icons.sentiment_very_satisfied_rounded,
+                size: 80,
+                color: Color(0xFFD1D5DB),
+              ),
+            ),
+          ),
+          const SizedBox(height: 36),
+
+          // Title
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111827),
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Body
+          Text(
+            body,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF6B7280),
+              height: 1.55,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -11,18 +12,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 
 const String _localePrefsKey = 'tickday_locale';
 const String _splashSeenPrefsKey = 'tickday_splash_seen';
+const String _firstGuideSeenPrefsKey = 'tickday_first_guide_seen';
 const String _globalReminderEnabledKey = 'tickday_global_reminder_enabled';
 const String _defaultAlarmMinutesKey = 'tickday_default_alarm_minutes';
+const String _strongAlarmModeKey = 'tickday_strong_alarm_mode';
 const String _todaySummaryEnabledKey = 'tickday_today_summary_enabled';
 const String _todaySummaryHourKey = 'tickday_today_summary_hour';
 const String _todaySummaryMinuteKey = 'tickday_today_summary_minute';
 const String _widgetPinnedItemIdKey = 'tickday_widget_pinned_item_id';
+const String _permanentlyDeletedWidgetIdsKey = 'tickday_permanently_deleted_widget_ids';
+const String _privacyPolicyUrl = 'https://ghotst72-csh.github.io/tickday-policy/privacy.html';
+const String _termsOfUseUrl = 'https://ghotst72-csh.github.io/tickday-terms/terms.html';
 const int _todaySummaryNotificationId = 999101;
 const int _todaySummaryScheduleDays = 7;
 final ValueNotifier<Locale?> appLocaleNotifier = ValueNotifier<Locale?>(null);
@@ -160,6 +169,21 @@ class NotificationService {
 
   static const NotificationDetails _details = NotificationDetails(android: _androidDetails);
 
+  // ⚠️ 풀스크린 알림 테스트용 (1차 안전버전, 아직 실제 스케줄에 연결 안 함)
+  static const AndroidNotificationDetails _androidDetailsFullScreen = AndroidNotificationDetails(
+    'dday_alarm_fullscreen_channel',
+    'D-day Full-Screen Reminder',
+    channelDescription: 'TickDay full-screen event reminder notifications (test only).',
+    importance: Importance.max,
+    priority: Priority.high,
+    category: AndroidNotificationCategory.alarm,
+    playSound: true,
+    enableVibration: true,
+    fullScreenIntent: true,  // 핵심: 풀스크린 모드 활성화
+  );
+
+  static const NotificationDetails _detailsFullScreen = NotificationDetails(android: _androidDetailsFullScreen);
+
   static Future<void> init() async {
     tzdata.initializeTimeZones();
     try {
@@ -192,6 +216,7 @@ class NotificationService {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.requestNotificationsPermission();
     await androidPlugin?.requestExactAlarmsPermission();
+    await androidPlugin?.requestFullScreenIntentPermission();
   }
 
   static Future<bool> areNotificationsEnabled() async {
@@ -217,9 +242,18 @@ class NotificationService {
     await androidPlugin?.requestNotificationsPermission();
   }
 
-  static Future<void> requestExactAlarmPermission() async {
+  static Future<bool> requestExactAlarmPermission() async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestExactAlarmsPermission();
+    return await androidPlugin?.requestExactAlarmsPermission() ?? false;
+  }
+
+  static Future<bool> requestFullScreenIntentPermission() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    try {
+      return await androidPlugin?.requestFullScreenIntentPermission() ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static int idFromString(String id) {
@@ -243,14 +277,38 @@ class NotificationService {
     required String body,
     required DateTime scheduledAt,
     String? payload,
+    bool fullScreen = false,
   }) async {
-    if (!scheduledAt.isAfter(DateTime.now())) return false;
+    final now = DateTime.now();
+    print('[TickDayAlarm][${now.toIso8601String()}][NotificationService] schedule start id=$id payload=$payload fullScreen=$fullScreen scheduledAt=$scheduledAt');
+    if (!scheduledAt.isAfter(now)) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] schedule rejected id=$id scheduledAt=$scheduledAt');
+      return false;
+    }
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] schedule accepted id=$id');
 
     // 같은 ID로 이미 예약된 알림이 남아 있으면 기기/OS에 따라 새 예약이
     // 씹히는 경우가 있어 먼저 취소 후 다시 예약합니다.
-    await _plugin.cancel(id);
+    try {
+      await _plugin.cancel(id);
+    } catch (e, s) {
+      debugPrint('[TickDayAlarm] cancel failed id=$id: $e');
+      debugPrintStack(stackTrace: s);
+    }
 
     final scheduled = tz.TZDateTime.from(scheduledAt, tz.local);
+    final details = fullScreen ? _detailsFullScreen : _details;
+
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule start id=$id scheduledAt=$scheduled');
+
+    // If this is a full-screen (strong) alarm, skip Flutter's zonedSchedule
+    // and let the native alarm scheduler handle the full-screen behavior.
+    if (fullScreen) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] fullScreen=true skip flutter zonedSchedule id=$id');
+      // User-requested plain log for easier filtering in debug logs
+      print('[NotificationService] fullScreen=true skip flutter zonedSchedule');
+      return true;
+    }
 
     try {
       await _plugin.zonedSchedule(
@@ -258,13 +316,15 @@ class NotificationService {
         title,
         body,
         scheduled,
-        _details,
+        details,
         payload: payload,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule exact success id=$id');
       return true;
-    } on PlatformException {
+    } on PlatformException catch (ex) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule exact failed id=$id exception=${ex.message}');
       // 정확한 알람 권한이 잠깐 꺼졌거나 Android가 exact alarm을 거부하는 경우
       // 앱이 완전히 실패하지 않도록 일반 예약 알림으로 한 번 더 시도합니다.
       try {
@@ -273,13 +333,15 @@ class NotificationService {
           title,
           body,
           scheduled,
-          _details,
+          details,
           payload: payload,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         );
+        print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule inexact success id=$id');
         return true;
-      } catch (_) {
+      } catch (ex) {
+        print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NotificationService] zonedSchedule inexact failed id=$id exception=${ex}');
         return false;
       }
     } catch (_) {
@@ -287,9 +349,513 @@ class NotificationService {
     }
   }
 
-  static Future<void> cancel(int id) async => _plugin.cancel(id);
+  static Future<void> cancel(int id) async {
+    try {
+      await _plugin.cancel(id);
+    } catch (e, s) {
+      debugPrint('[TickDayAlarm] cancel failed id=$id: $e');
+      debugPrintStack(stackTrace: s);
+    }
+  }
+
+
+  // ⚠️ 테스트용 풀스크린 알림 (1차 안전버전)
+  // 기존 schedule(), showNow() 등은 변경 없음
+  static Future<void> showFullScreenNow({
+    int id = 999888,
+    String title = 'Full-Screen Test',
+    String body = 'This is a full-screen notification test.',
+    String? payload,
+  }) async {
+    try {
+      await _plugin.show(
+        id,
+        title,
+        body,
+        _detailsFullScreen,
+        payload: payload ?? '__fullscreen_test__',
+      );
+    } catch (_) {
+      // 실패해도 기존 앱 기능에 영향 없음
+    }
+  }
 }
 
+class NativeAlarmService {
+  NativeAlarmService._();
+  static const MethodChannel _channel = MethodChannel('com.tickday/alarm');
+
+  static Future<void> scheduleAlarm({
+    required int alarmId,
+    required DateTime scheduledAt,
+    String? title,
+    String? body,
+    String? itemId,
+    String? memo,
+    bool strong = false,
+  }) async {
+    print('[NativeAlarmService] ENTER scheduleAlarm alarmId=$alarmId');
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm alarmId=$alarmId itemId=$itemId memo=${memo != null ? memo.replaceAll("\n", " ") : "null"} scheduledAt=$scheduledAt strong=$strong');
+    try {
+      await _channel.invokeMethod('scheduleAlarm', {
+        'alarmId': alarmId,
+        'triggerAtMillis': scheduledAt.millisecondsSinceEpoch,
+        'title': title,
+        'body': body,
+        'itemId': itemId,
+        'memo': memo,
+        'strong': strong,
+      });
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm method channel invoked alarmId=$alarmId');
+      // Additional concise logs for requested trace
+      print('[NativeAlarmService] scheduleAlarm called');
+      print('[NativeAlarmService] alarm scheduled requestCode=$alarmId');
+    } catch (ex) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm failed alarmId=$alarmId exception=${ex}');
+      print('[NativeAlarmService] FAILED scheduleAlarm alarmId=$alarmId exception=${ex}');
+    }
+  }
+
+  static Future<void> cancelAlarm(int alarmId) async {
+    print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] cancelAlarm alarmId=$alarmId');
+    try {
+      await _channel.invokeMethod('cancelAlarm', {'alarmId': alarmId});
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] cancelAlarm ok alarmId=$alarmId');
+    } catch (ex) {
+      print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] cancelAlarm failed alarmId=$alarmId exception=$ex');
+    }
+  }
+}
+
+
+// ⚠️ 풀스크린 알림용 OverlayEntry 기반 UI (1차 안전버전, 테스트 전용)
+// 실제 스케줄 알림과는 아직 연결 안 함
+class FullScreenNotificationOverlay {
+  static OverlayEntry? _currentEntry;
+
+  static Future<void> show({
+    required String title,
+    required String body,
+    Duration dismissDuration = const Duration(seconds: 5),
+    VoidCallback? onConfirm,
+    VoidCallback? onClose,
+  }) async {
+    _currentEntry?.remove();
+    _currentEntry = null;
+
+    // locale 확정: notifier가 null이면 SharedPreferences에서 직접 읽음
+    // (앱 시작 직후 async 초기화 전에 show()가 호출되는 경우 대비)
+    Locale locale = appLocaleNotifier.value ?? const Locale('ko', 'KR');
+    if (appLocaleNotifier.value == null) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final code = prefs.getString(_localePrefsKey);
+        if (code != null) {
+          locale = _localeFromCode(code) ?? locale;
+        }
+      } catch (_) {}
+    }
+    final l = L(locale);
+    final badge = l.pick(ko: 'D-Day 알림', en: 'D-Day Reminder', ja: 'D-Day通知', vi: 'Nhắc D-day');
+    final confirmLabel = l.pick(ko: '확인하기', en: 'Confirm', ja: '확인', vi: 'Xác nhận');
+    final closeLabel = l.pick(ko: '닫기', en: 'Close', ja: '閉じる', vi: 'Đóng');
+
+    _currentEntry = OverlayEntry(
+      builder: (context) => _FullScreenNotificationWidget(
+        title: title,
+        body: body,
+        badge: badge,
+        confirmLabel: confirmLabel,
+        closeLabel: closeLabel,
+        onConfirm: onConfirm ?? dismiss,
+        onClose: onClose ?? dismiss,
+      ),
+    );
+
+    // 상위 context의 Overlay에 추가
+    try {
+      Overlay.of(_getGlobalContext()).insert(_currentEntry!);
+      Future.delayed(dismissDuration, dismiss);
+    } catch (_) {
+      _currentEntry = null;
+    }
+  }
+
+  static void dismiss() {
+    _currentEntry?.remove();
+    _currentEntry = null;
+  }
+
+  static void dismissWithoutPendingOpen() {
+    _currentEntry?.remove();
+    _currentEntry = null;
+  }
+
+  static BuildContext? _lastContext;
+
+  static void setContext(BuildContext context) {
+    _lastContext = context;
+  }
+
+  static BuildContext _getGlobalContext() {
+    if (_lastContext != null) return _lastContext!;
+    final navContext = _navigatorKey.currentContext;
+    if (navContext != null) return navContext;
+    throw Exception('FullScreenNotificationOverlay context not set');
+  }
+}
+
+class _FullScreenNotificationWidget extends StatefulWidget {
+  final String title;
+  final String body;
+  final String badge;
+  final String confirmLabel;
+  final String closeLabel;
+  final VoidCallback onConfirm;
+  final VoidCallback onClose;
+
+  const _FullScreenNotificationWidget({
+    required this.title,
+    required this.body,
+    required this.badge,
+    required this.confirmLabel,
+    required this.closeLabel,
+    required this.onConfirm,
+    required this.onClose,
+  });
+
+  @override
+  State<_FullScreenNotificationWidget> createState() => _FullScreenNotificationWidgetState();
+}
+
+class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWidget>
+    with TickerProviderStateMixin {
+  late AnimationController _entryController;
+  late AnimationController _bgController;
+  late Animation<double> _fadeAnim;
+  late Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryController = AnimationController(
+      duration: const Duration(milliseconds: 380),
+      vsync: this,
+    );
+    _fadeAnim = CurvedAnimation(parent: _entryController, curve: Curves.easeOut);
+    _scaleAnim = Tween<double>(begin: 0.88, end: 1.0).animate(
+      CurvedAnimation(parent: _entryController, curve: Curves.easeOutBack),
+    );
+    _entryController.forward();
+
+    _bgController = AnimationController(
+      duration: const Duration(seconds: 5),
+      vsync: this,
+    );
+    _bgController.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _entryController.dispose();
+    _bgController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: AnimatedBuilder(
+          animation: _bgController,
+          builder: (context, child) {
+            final t = _bgController.value;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                // Aurora gradient background
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment(-1.0 + t * 0.5, -1.0),
+                      end: Alignment(1.0, 1.0 - t * 0.4),
+                      colors: [
+                        Color.lerp(const Color(0xFF080D1C), const Color(0xFF130820), t)!,
+                        Color.lerp(const Color(0xFF0D1230), const Color(0xFF0A1530), t)!,
+                        Color.lerp(const Color(0xFF060A18), const Color(0xFF0A0E1F), t)!,
+                      ],
+                    ),
+                  ),
+                ),
+                // Top-left purple glow
+                Positioned(
+                  top: -60 + t * 25,
+                  left: -60 + t * 15,
+                  child: _buildGlow(220,
+                    Color.lerp(const Color(0xFF7C3AED), const Color(0xFF4F46E5), t)!
+                        .withOpacity(0.38 + t * 0.08)),
+                ),
+                // Bottom-right blue glow
+                Positioned(
+                  bottom: -50 + t * 18,
+                  right: -50 - t * 18,
+                  child: _buildGlow(200,
+                    Color.lerp(const Color(0xFF0EA5E9), const Color(0xFF06B6D4), t)!
+                        .withOpacity(0.30 + t * 0.10)),
+                ),
+                // Bottom-left teal accent
+                Positioned(
+                  bottom: 80 - t * 18,
+                  left: 10 + t * 12,
+                  child: _buildGlow(130,
+                    Color.lerp(const Color(0xFF10B981), const Color(0xFF0D9488), t)!
+                        .withOpacity(0.20 + t * 0.08)),
+                ),
+                child!,
+              ],
+            );
+          },
+          child: SafeArea(
+            child: Center(
+              child: ScaleTransition(
+                scale: _scaleAnim,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(28),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                const Color(0xFF1C2140).withOpacity(0.90),
+                                const Color(0xFF0F1525).withOpacity(0.90),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.12),
+                              width: 1,
+                            ),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(26, 30, 26, 26),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // Pulsing bell icon
+                              AnimatedBuilder(
+                                animation: _bgController,
+                                builder: (context, _) => Container(
+                                  width: 72,
+                                  height: 72,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: RadialGradient(colors: [
+                                      Color.lerp(const Color(0xFF7C3AED), const Color(0xFF4F46E5),
+                                          _bgController.value)!.withOpacity(0.28),
+                                      Colors.transparent,
+                                    ]),
+                                    border: Border.all(
+                                      color: Color.lerp(const Color(0xFF818CF8), const Color(0xFF60A5FA),
+                                          _bgController.value)!.withOpacity(0.55),
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Color.lerp(const Color(0xFF7C3AED), const Color(0xFF4F46E5),
+                                            _bgController.value)!.withOpacity(0.35),
+                                        blurRadius: 18,
+                                        spreadRadius: 2,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    Icons.notifications_active_rounded,
+                                    color: Color.lerp(const Color(0xFF60A5FA), const Color(0xFFA78BFA),
+                                        _bgController.value),
+                                    size: 32,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              // Badge chip
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF7C3AED), Color(0xFF2563EB)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF7C3AED).withOpacity(0.40),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  widget.badge,
+                                  style: const TextStyle(
+                                    decoration: TextDecoration.none,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              // Title
+                              if (widget.title.isNotEmpty) ...[
+                                Text(
+                                  widget.title,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    decoration: TextDecoration.none,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    height: 1.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                              // Body (shown only when non-empty)
+                              if (widget.body.isNotEmpty)
+                                Text(
+                                  widget.body,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    decoration: TextDecoration.none,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.white.withOpacity(0.68),
+                                    height: 1.55,
+                                  ),
+                                ),
+                              const SizedBox(height: 28),
+                              // Buttons
+                              Row(
+                                children: [
+                                  Expanded(child: _buildConfirmButton(context)),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: _buildCloseButton(context)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlow(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(colors: [color, Colors.transparent]),
+      ),
+    );
+  }
+
+  Widget _buildConfirmButton(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onConfirm,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7C3AED), Color(0xFF4F46E5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF7C3AED).withOpacity(0.45),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            widget.confirmLabel,
+            style: const TextStyle(
+              decoration: TextDecoration.none,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCloseButton(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onClose,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.20), width: 1),
+          color: Colors.white.withOpacity(0.07),
+        ),
+        child: Center(
+          child: Text(
+            widget.closeLabel,
+            style: const TextStyle(
+              decoration: TextDecoration.none,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+String _overlayText(BuildContext context, String key) {
+  final locale = appLocaleNotifier.value ?? Localizations.localeOf(context);
+  final l = L(locale);
+  switch (key) {
+    case 'badge': return l.pick(ko:'D-Day 알림', en:'D-Day Reminder', ja:'D-Day通知', vi:'Nhắc D-day');
+    case 'title': return l.pick(ko:'알림 미리보기', en:'Notification Preview', ja:'通知プレビュー', vi:'Xem trước thông báo');
+    case 'body': return l.pick(ko:'오늘의 중요한 일정을 놓치지 마세요', en:"Don't miss today's important schedule", ja:'今日の大切な予定を見逃さないでください', vi:'Đừng bỏ lỡ lịch trình quan trọng hôm nay');
+    case 'confirm': return l.pick(ko:'확인하기', en:'Confirm', ja:'確認', vi:'Xác nhận');
+    case 'close': return l.pick(ko:'닫기', en:'Close', ja:'閉じる', vi:'Đóng');
+    default: return '';
+  }
+}
 
 class WidgetDeepLinkService {
   WidgetDeepLinkService._();
@@ -317,6 +883,14 @@ class WidgetDeepLinkService {
     }
   }
 
+  static Future<bool?> requestPinHomeWidget(String providerName) async {
+    try {
+      return await _channel.invokeMethod<bool>('requestPinHomeWidget', {'provider': providerName});
+    } catch (_) {
+      return false;
+    }
+  }
+
   static void dispose() {
     _onItemId = null;
     _channel.setMethodCallHandler(null);
@@ -326,6 +900,7 @@ class WidgetDeepLinkService {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
+  unawaited(MobileAds.instance.initialize());
   runApp(const DdayApp());
 }
 
@@ -335,6 +910,8 @@ class DdayApp extends StatefulWidget {
   @override
   State<DdayApp> createState() => _DdayAppState();
 }
+
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
 class _DdayAppState extends State<DdayApp> {
   @override
@@ -356,6 +933,7 @@ class _DdayAppState extends State<DdayApp> {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'TickDay',
+          navigatorKey: _navigatorKey,
           locale: locale,
           supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US'), Locale('ja', 'JP'), Locale('vi', 'VN')],
           localizationsDelegates: const [
@@ -389,6 +967,7 @@ class SplashGate extends StatefulWidget {
 
 class _SplashGateState extends State<SplashGate> {
   bool? _showSplash;
+  bool _isFirstLaunch = false;
 
   @override
   void initState() {
@@ -397,10 +976,18 @@ class _SplashGateState extends State<SplashGate> {
   }
 
   Future<void> _checkSplash() async {
-    // TickDay는 실행 시 짧은 준비 화면을 보여주는 구조가 더 자연스러워서
-    // 이전 실행 여부와 관계없이 매번 스플래시를 표시합니다.
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeenSplash = prefs.getBool(_splashSeenPrefsKey) ?? false;
+
+    if (!hasSeenSplash) {
+      await prefs.setBool(_splashSeenPrefsKey, true);
+    }
+
     if (!mounted) return;
-    setState(() => _showSplash = true);
+    setState(() {
+      _isFirstLaunch = !hasSeenSplash;
+      _showSplash = true;
+    });
   }
 
   Future<void> _finishSplash() async {
@@ -414,15 +1001,24 @@ class _SplashGateState extends State<SplashGate> {
       return const Scaffold(backgroundColor: Color(0xFFF4F6FA));
     }
     if (_showSplash == true) {
-      return TickDaySplashScreen(onDone: _finishSplash);
+      return TickDaySplashScreen(
+        isFirstLaunch: _isFirstLaunch,
+        onDone: _finishSplash,
+      );
     }
     return const HomePage();
   }
 }
 
 class TickDaySplashScreen extends StatefulWidget {
+  final bool isFirstLaunch;
   final Future<void> Function() onDone;
-  const TickDaySplashScreen({super.key, required this.onDone});
+
+  const TickDaySplashScreen({
+    super.key,
+    required this.isFirstLaunch,
+    required this.onDone,
+  });
 
   @override
   State<TickDaySplashScreen> createState() => _TickDaySplashScreenState();
@@ -435,6 +1031,18 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
 
   List<String> _messages(BuildContext context) {
     final l = L.of(context);
+
+    if (!widget.isFirstLaunch) {
+      return [
+        l.pick(
+          ko: '오늘의 일정을 불러오는 중이에요',
+          en: 'Loading your days',
+          ja: '今日の予定を読み込んでいます',
+          vi: 'Đang tải lịch của bạn',
+        ),
+      ];
+    }
+
     return [
       l.pick(
         ko: '멋진 기기를 사용 중이시네요 😊',
@@ -464,6 +1072,8 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
   }
 
   IconData _splashIcon(int index) {
+    if (!widget.isFirstLaunch) return Icons.event_available_rounded;
+
     switch (index) {
       case 0:
         return Icons.lightbulb_outline_rounded;
@@ -483,16 +1093,25 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
     super.initState();
     _iconController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: Duration(milliseconds: widget.isFirstLaunch ? 1100 : 450),
     )..repeat(reverse: true);
-    _timer = Timer.periodic(const Duration(milliseconds: 900), (timer) {
+
+    final messagesCount = widget.isFirstLaunch ? 4 : 1;
+    if (messagesCount <= 1) {
+      _timer = Timer(Duration(milliseconds: widget.isFirstLaunch ? 1200 : 650), () {
+        if (!mounted) return;
+        widget.onDone();
+      });
+      return;
+    }
+
+    _timer = Timer.periodic(Duration(milliseconds: widget.isFirstLaunch ? 900 : 350), (timer) {
       if (!mounted) return;
-      final count = _messages(context).length;
-      if (_index < count - 1) {
+      if (_index < messagesCount - 1) {
         setState(() => _index++);
       } else {
         timer.cancel();
-        Future<void>.delayed(const Duration(milliseconds: 700), widget.onDone);
+        Future<void>.delayed(Duration(milliseconds: widget.isFirstLaunch ? 700 : 150), widget.onDone);
       }
     });
   }
@@ -507,6 +1126,10 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final messages = _messages(context);
+    final iconSize = widget.isFirstLaunch ? 58.0 : 42.0;
+    final boxSize = widget.isFirstLaunch ? 118.0 : 88.0;
+    final titleSize = widget.isFirstLaunch ? 34.0 : 30.0;
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -524,11 +1147,11 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 118,
-                    height: 118,
+                    width: boxSize,
+                    height: boxSize,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(34),
+                      borderRadius: BorderRadius.circular(widget.isFirstLaunch ? 34 : 28),
                       boxShadow: [BoxShadow(color: const Color(0xFF111827).withOpacity(0.18), blurRadius: 30, offset: const Offset(0, 14))],
                     ),
                     child: AnimatedBuilder(
@@ -536,33 +1159,37 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
                       builder: (context, child) {
                         final value = _iconController.value;
                         final scale = 0.94 + (value * 0.10);
-                        final angle = (value - 0.5) * 0.10;
+                        final angle = widget.isFirstLaunch ? (value - 0.5) * 0.10 : 0.0;
                         return Transform.rotate(
                           angle: angle,
                           child: Transform.scale(scale: scale, child: child),
                         );
                       },
-                      child: Icon(_splashIcon(_index), key: ValueKey<int>(_index), size: 58, color: const Color(0xFF111827)),
+                      child: Icon(_splashIcon(_index), key: ValueKey<int>(_index), size: iconSize, color: const Color(0xFF111827)),
                     ),
                   ),
-                  const SizedBox(height: 26),
-                  const Text('TickDay', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: Color(0xFF111827), letterSpacing: -0.8)),
                   const SizedBox(height: 24),
+                  Text('TickDay', style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.w800, color: const Color(0xFF111827), letterSpacing: -0.8)),
+                  const SizedBox(height: 20),
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
+                    duration: const Duration(milliseconds: 220),
                     transitionBuilder: (child, animation) => FadeTransition(
                       opacity: animation,
                       child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.14), end: Offset.zero).animate(animation), child: child),
                     ),
                     child: Text(
-                      messages[_index],
+                      messages[_index.clamp(0, messages.length - 1)],
                       key: ValueKey<int>(_index),
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w800, color: Color(0xFF374151)),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFF111827))),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: widget.isFirstLaunch ? 28 : 22,
+                    height: widget.isFirstLaunch ? 28 : 22,
+                    child: CircularProgressIndicator(strokeWidth: widget.isFirstLaunch ? 3 : 2.6, color: const Color(0xFF111827)),
+                  ),
                 ],
               ),
             ),
@@ -572,7 +1199,6 @@ class _TickDaySplashScreenState extends State<TickDaySplashScreen> with SingleTi
     );
   }
 }
-
 
 class WidgetPreviewData {
   final String dday;
@@ -1188,6 +1814,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const _hideIntroKey = 'hide_intro_notice';
   static const _hideWidgetKey = 'hide_widget_notice';
   static const _trashItemsKey = 'dday_trash_items';
+  static const _appOpenCountKey = 'tickday_app_open_count';
+  static const _reviewPromptShownKey = 'tickday_review_prompt_shown';
+  static const _playStoreUrl = 'https://play.google.com/store/apps/details?id=com.forgeapps.tickday';
 
   final List<DdayItem> _items = [];
   final List<DdayItem> _trashItems = [];
@@ -1199,6 +1828,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _exactAlarmPermissionOk = false;
   bool _permissionCardExpanded = false;
   bool _globalReminderEnabled = true;
+  bool _strongAlarmMode = false;
   bool _todaySummaryEnabled = false;
   int _todaySummaryHour = 9;
   int _todaySummaryMinute = 0;
@@ -1208,6 +1838,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Timer? _clockTimer;
   String? _pendingNotificationItemId;
+  bool _reviewPromptCheckedThisSession = false;
+  BannerAd? _bannerAd;
+  bool _isBannerAdReady = false;
+  static const String _testBannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
 
   @override
   void initState() {
@@ -1216,11 +1850,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     NotificationService.onNotificationClick = _handleNotificationPayload;
     WidgetDeepLinkService.init(_handleWidgetItemId);
     final launchPayload = NotificationService.takeLaunchPayload();
-    _pendingNotificationItemId = (launchPayload == '__today_summary__' || launchPayload == '__test__') ? null : launchPayload;
+    final _strippedLaunch = (launchPayload?.startsWith('__alarm__:') == true) ? launchPayload!.substring('__alarm__:'.length) : launchPayload;
+    _pendingNotificationItemId = (_strippedLaunch == '__today_summary__' || _strippedLaunch == '__test__') ? null : _strippedLaunch;
     unawaited(_loadInitialWidgetItemId());
     _loadAll(rescheduleNotifications: true);
     _refreshPermissionStatus();
     _startClockTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_showFirstGuideIfNeeded());
+    });
+    _loadBannerAd();
   }
 
   @override
@@ -1231,6 +1870,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     WidgetDeepLinkService.dispose();
     WidgetsBinding.instance.removeObserver(this);
+    _bannerAd?.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -1249,12 +1889,299 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  void _loadBannerAd() {
+    final banner = BannerAd(
+      adUnitId: _testBannerAdUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
+          setState(() {
+            _bannerAd = ad as BannerAd;
+            _isBannerAdReady = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          if (!mounted) return;
+          setState(() {
+            _bannerAd = null;
+            _isBannerAdReady = false;
+          });
+        },
+      ),
+    );
+    banner.load();
+  }
+
   void _startClockTimer() {
     _clockTimer?.cancel();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
       _refreshNow();
     });
+  }
+
+  Future<void> _showFirstGuideIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadySeen = prefs.getBool(_firstGuideSeenPrefsKey) ?? false;
+    if (alreadySeen || !mounted) return;
+    await prefs.setBool(_firstGuideSeenPrefsKey, true);
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (!mounted) return;
+    _showFirstGuideDialog();
+  }
+
+  void _showFirstGuideDialog() {
+    final l = L.of(context);
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'first-guide',
+      barrierColor: Colors.black.withOpacity(0.38),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        Widget guideItem(IconData icon, String title, String subtitle) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(14)),
+                child: Icon(icon, size: 21, color: const Color(0xFF111827)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Color(0xFF111827))),
+                    const SizedBox(height: 3),
+                    Text(subtitle, style: const TextStyle(fontSize: 12.5, height: 1.35, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: math.min(MediaQuery.of(dialogContext).size.width - 36, 360),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.20), blurRadius: 30, offset: const Offset(0, 16))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(16)),
+                          child: const Icon(Icons.event_available_rounded, color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            l.pick(ko: 'TickDay 빠른 안내', en: 'Quick TickDay guide', ja: 'TickDay クイックガイド', vi: 'Hướng dẫn nhanh TickDay'),
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF111827), letterSpacing: -0.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    guideItem(
+                      Icons.add_rounded,
+                      l.pick(ko: '+ 버튼', en: '+ button', ja: '＋ボタン', vi: 'Nút +'),
+                      l.pick(ko: '새 일정을 직접 등록해요.', en: 'Add a new event manually.', ja: '新しい予定を直接追加できます。', vi: 'Thêm sự kiện mới thủ công.'),
+                    ),
+                    const SizedBox(height: 14),
+                    guideItem(
+                      Icons.bolt_rounded,
+                      l.pick(ko: '번개 버튼', en: 'Lightning button', ja: '稲妻ボタン', vi: 'Nút tia chớp'),
+                      l.pick(ko: '빠른 추가, 알림 확인, 위젯 추가를 한 번에 열어요.', en: 'Open quick add, notification check, and widgets.', ja: 'クイック追加、通知確認、ウィジェット追加を開けます。', vi: 'Mở thêm nhanh, kiểm tra thông báo và widget.'),
+                    ),
+                    const SizedBox(height: 14),
+                    guideItem(
+                      Icons.widgets_outlined,
+                      l.pick(ko: '홈 위젯', en: 'Home widget', ja: 'ホームウィジェット', vi: 'Widget màn hình chính'),
+                      l.pick(ko: '중요한 D-day를 홈 화면에서 바로 확인해요.', en: 'Check important D-days from your home screen.', ja: '大切なD-dayをホーム画面で確認できます。', vi: 'Xem D-day quan trọng ngay trên màn hình chính.'),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                        child: Text(l.pick(ko: '시작하기', en: 'Got it', ja: '始める', vi: 'Đã hiểu'), style: const TextStyle(fontWeight: FontWeight.w900)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: Text(l.pick(ko: '건너뛰기', en: 'Skip', ja: 'スキップ', vi: 'Bỏ qua'), style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6B7280))),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
+  Future<void> _maybeShowReviewPrompt() async {
+    if (_reviewPromptCheckedThisSession || !mounted) return;
+    _reviewPromptCheckedThisSession = true;
+
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyShown = prefs.getBool(_reviewPromptShownKey) ?? false;
+    final openCount = (prefs.getInt(_appOpenCountKey) ?? 0) + 1;
+    await prefs.setInt(_appOpenCountKey, openCount);
+
+    if (alreadyShown) return;
+    if (openCount < 3 && _items.length < 2) return;
+
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+
+    await prefs.setBool(_reviewPromptShownKey, true);
+    _showReviewPromptDialog();
+  }
+
+  Future<void> _openPlayStoreReviewPage() async {
+    final uri = Uri.parse(_playStoreUrl);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      // 리뷰 페이지 이동 실패 시 앱 기능에는 영향을 주지 않습니다.
+    }
+  }
+
+  void _showReviewPromptDialog() {
+    final l = L.of(context);
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'review-prompt',
+      barrierColor: Colors.black.withOpacity(0.38),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: math.min(MediaQuery.of(dialogContext).size.width - 36, 360),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.20), blurRadius: 30, offset: const Offset(0, 16))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                        style: IconButton.styleFrom(backgroundColor: const Color(0xFFF3F4F6)),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      l.pick(
+                        ko: 'TickDay가 도움이 되었나요?',
+                        en: 'Is TickDay helpful?',
+                        ja: 'TickDayは役に立っていますか？',
+                        vi: 'TickDay có hữu ích không?',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 21, height: 1.25, fontWeight: FontWeight.w900, color: Color(0xFF111827), letterSpacing: -0.5),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      l.pick(
+                        ko: '소중한 리뷰는 더 좋은 앱을 만드는 데 큰 힘이 됩니다.',
+                        en: 'Your review helps us make the app better.',
+                        ja: 'レビューはより良いアプリ作りの大きな力になります。',
+                        vi: 'Đánh giá của bạn giúp chúng tôi cải thiện ứng dụng.',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 14.5, height: 1.45, fontWeight: FontWeight.w700, color: Color(0xFF4B5563)),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        5,
+                        (index) => const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 3),
+                          child: Icon(Icons.star_rounded, color: Color(0xFFFBBF24), size: 34),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () async {
+                          Navigator.of(dialogContext).pop();
+                          await _openPlayStoreReviewPage();
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                        child: Text(
+                          l.pick(ko: '리뷰 남기기', en: 'Leave a review', ja: 'レビューを書く', vi: 'Đánh giá ứng dụng'),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: Text(
+                        l.pick(ko: '나중에', en: 'Later', ja: '後で', vi: 'Để sau'),
+                        style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6B7280)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _refreshNow() {
@@ -1269,6 +2196,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _handleNotificationPayload(String payload) {
     if (payload.isEmpty || payload == '__test__') return;
+    // ⚠️ 풀스크린 알림 플래그 감지 (1차 안전버전, 테스트용)
+    if (payload == '__fullscreen_test__' || payload == '__fullscreen_auto__') {
+      FullScreenNotificationOverlay.setContext(context);
+      final _l = L(appLocaleNotifier.value ?? const Locale('ko', 'KR'));
+      unawaited(FullScreenNotificationOverlay.show(
+        title: _l.pick(ko: '알림 미리보기', en: 'Notification Preview', ja: '通知プレビュー', vi: 'Xem trước thông báo'),
+        body: '',
+        dismissDuration: const Duration(seconds: 5),
+        onClose: () {
+          _pendingNotificationItemId = null;
+          FullScreenNotificationOverlay.dismissWithoutPendingOpen();
+        },
+      ));
+      return;
+    }
+    if (payload.startsWith('__alarm__:')) {
+      // 실제 예약 알림 클릭 경로: 테스트용 Overlay는 절대 표시하지 않습니다.
+      final itemId = payload.substring('__alarm__:'.length);
+      _pendingNotificationItemId = itemId;
+      _openPendingNotificationItem();
+      return;
+    }
     if (payload == '__today_summary__') {
       // 오늘 일정 요약 알림은 특정 카드가 아니라 앱 홈 화면으로 들어오게만 합니다.
       _pendingNotificationItemId = null;
@@ -1298,6 +2247,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _openPendingNotificationItem() {
+    // If the overlay close button was tapped, clear any pending notification item
+    // and do not process it. This avoids navigation, snackbars, or deleted-item alerts.
+    if (_pendingNotificationItemId == null) {
+      return;
+    }
+
     final id = _pendingNotificationItemId;
     if (id == null || id.isEmpty || !mounted) return;
 
@@ -1309,7 +2264,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     }
 
-    if (targetItem == null) return;
+    if (targetItem == null) {
+      _pendingNotificationItemId = null;
+      // 이미 휴지통에서 완전 삭제된 일정의 위젯/알림 딥링크가 남아 있어도
+      // 휴지통 복구나 Undo가 다시 살아나지 않도록 여기서 종료합니다.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).clearSnackBars();
+        _showInfoSnack(L.of(context).pick(
+          ko: '이미 삭제된 일정이에요.',
+          en: 'This event has already been deleted.',
+          ja: 'この予定はすでに削除されています。',
+          vi: 'Sự kiện này đã bị xóa.',
+        ));
+      });
+      return;
+    }
+
     _pendingNotificationItemId = null;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1461,6 +2432,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _todaySummaryHour = prefs.getInt(_todaySummaryHourKey) ?? 9;
       _todaySummaryMinute = prefs.getInt(_todaySummaryMinuteKey) ?? 0;
       _defaultAlarmMinutesBefore = prefs.getInt(_defaultAlarmMinutesKey) ?? 1440;
+      _strongAlarmMode = prefs.getBool(_strongAlarmModeKey) ?? false;
       _widgetPinnedItemId = prefs.getString(_widgetPinnedItemIdKey);
     });
 
@@ -1471,6 +2443,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await _rescheduleAllNotifications();
       await _scheduleTodaySummaryNotification();
     }
+
+    unawaited(_maybeShowReviewPrompt());
   }
 
   Future<void> _saveItems() async {
@@ -1481,6 +2455,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _saveTrashItems() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_trashItemsKey, _trashItems.map((e) => jsonEncode(e.toJson())).toList());
+  }
+
+  Future<void> _markWidgetItemsPermanentlyDeleted(Iterable<String> itemIds) async {
+    final idsToAdd = itemIds.where((id) => id.trim().isNotEmpty).toSet();
+    if (idsToAdd.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getStringList(_permanentlyDeletedWidgetIdsKey) ?? <String>[];
+    final merged = <String>{...existing, ...idsToAdd}.toList();
+
+    await prefs.setStringList(_permanentlyDeletedWidgetIdsKey, merged);
+
+    // Android 홈 위젯 Provider가 삭제된 일정 ID를 알 수 있도록 HomeWidget 저장소에도 기록합니다.
+    // 기존 위젯 박스는 Android 정책상 앱이 강제로 제거할 수 없으므로,
+    // 해당 위젯은 "일정을 선택하세요" 상태로 안전하게 초기화됩니다.
+    await HomeWidget.saveWidgetData<String>('widget_deleted_item_ids', jsonEncode(merged));
+    await HomeWidget.updateWidget(androidName: 'DdayWidgetProvider');
   }
 
 
@@ -1495,18 +2486,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final upcoming = List<DdayItem>.from(_items)
       ..sort((a, b) => _effectiveTarget(a).compareTo(_effectiveTarget(b)));
 
-    // 위젯은 사용자가 마지막으로 저장/수정한 일정을 우선 표시합니다.
-    // 이전에는 가장 가까운 일정만 자동 선택해서, 예전 일정(예: 결혼기념일)이 계속 보이는 것처럼 느껴질 수 있었습니다.
-    final pinnedId = _widgetPinnedItemId;
-    if (pinnedId != null && pinnedId.isNotEmpty) {
-      final pinnedIndex = upcoming.indexWhere((item) => item.id == pinnedId);
-      if (pinnedIndex >= 0) {
-        final pinned = upcoming.removeAt(pinnedIndex);
-        upcoming.insert(0, pinned);
-      }
-    }
-
     return upcoming.take(count).toList();
+  }
+
+  DdayItem? _pinnedWidgetItem() {
+    final pinnedId = _widgetPinnedItemId;
+    if (pinnedId == null || pinnedId.isEmpty) return null;
+    for (final item in _items) {
+      if (item.id == pinnedId) return item;
+    }
+    return null;
+  }
+
+  DdayItem? _smallWidgetItem() {
+    // Small widget default is always the nearest upcoming event.
+    // Card-specific widget additions are stored as a per-widget pending snapshot
+    // so multiple 1x1 widgets can each keep different events.
+    return _nearestWidgetItem();
   }
 
   String _widgetRemainText(DdayItem item) {
@@ -1520,10 +2516,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return l.pick(ko: '${days}일 남음', en: '${days}d left', ja: 'あと${days}日', vi: 'Còn ${days} ngày');
   }
 
+  Future<void> _saveWidgetItemsSnapshot() async {
+    final snapshot = _items.map((item) {
+      final target = _effectiveTarget(item);
+      return {
+        'id': item.id,
+        'title': item.title,
+        'dday': _dDayText(item),
+        'remain': _widgetRemainText(item),
+        'color': item.colorValue,
+        'targetMillis': target.millisecondsSinceEpoch,
+        'repeatType': item.repeatType,
+        'month': item.targetDate.month,
+        'day': item.targetDate.day,
+        'hour': item.targetTime.hour,
+        'minute': item.targetTime.minute,
+        'createdMillis': item.createdAt.millisecondsSinceEpoch,
+      };
+    }).toList();
+
+    await HomeWidget.saveWidgetData<String>('widget_items_snapshot', jsonEncode(snapshot));
+  }
+
   Future<void> _updateHomeWidget() async {
     try {
       final widgetItems = _nearestWidgetItems(2);
-      final item = widgetItems.isEmpty ? null : widgetItems.first;
+      final item = _smallWidgetItem();
+
+      await _saveWidgetItemsSnapshot();
 
       if (item == null) {
         await HomeWidget.saveWidgetData<String>('widget_item_id', '');
@@ -1601,6 +2621,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await HomeWidget.saveWidgetData<String>('${prefix}lang', Localizations.localeOf(context).languageCode);
   }
 
+  Future<void> _savePendingSmallWidgetItem(DdayItem? item) async {
+    if (item == null) {
+      await HomeWidget.saveWidgetData<String>('widget_pending_item_id', '');
+      await HomeWidget.saveWidgetData<String>('widget_pending_dday', 'D-Day');
+      await HomeWidget.saveWidgetData<String>('widget_pending_title', L.of(context).pick(ko: '일정을 등록하세요', en: 'Add an event', ja: '予定を追加してください', vi: 'Thêm sự kiện'));
+      await HomeWidget.saveWidgetData<String>('widget_pending_remain', 'TickDay');
+      await HomeWidget.saveWidgetData<int>('widget_pending_color', const Color(0xFF111827).value);
+      await HomeWidget.saveWidgetData<int>('widget_pending_target_millis', 0);
+      await HomeWidget.saveWidgetData<String>('widget_pending_repeat_type', 'none');
+      await HomeWidget.saveWidgetData<int>('widget_pending_month', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_day', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_hour', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_minute', 0);
+      await HomeWidget.saveWidgetData<int>('widget_pending_created_millis', 0);
+      await HomeWidget.saveWidgetData<String>('widget_pending_lang', Localizations.localeOf(context).languageCode);
+      return;
+    }
+
+    final target = _effectiveTarget(item);
+    await HomeWidget.saveWidgetData<String>('widget_pending_item_id', item.id);
+    await HomeWidget.saveWidgetData<String>('widget_pending_dday', _dDayText(item));
+    await HomeWidget.saveWidgetData<String>('widget_pending_title', item.title);
+    await HomeWidget.saveWidgetData<String>('widget_pending_remain', _widgetRemainText(item));
+    await HomeWidget.saveWidgetData<int>('widget_pending_color', item.colorValue);
+    await HomeWidget.saveWidgetData<int>('widget_pending_target_millis', target.millisecondsSinceEpoch);
+    await HomeWidget.saveWidgetData<String>('widget_pending_repeat_type', item.repeatType);
+    await HomeWidget.saveWidgetData<int>('widget_pending_month', item.targetDate.month);
+    await HomeWidget.saveWidgetData<int>('widget_pending_day', item.targetDate.day);
+    await HomeWidget.saveWidgetData<int>('widget_pending_hour', item.targetTime.hour);
+    await HomeWidget.saveWidgetData<int>('widget_pending_minute', item.targetTime.minute);
+    await HomeWidget.saveWidgetData<int>('widget_pending_created_millis', item.createdAt.millisecondsSinceEpoch);
+    await HomeWidget.saveWidgetData<String>('widget_pending_lang', Localizations.localeOf(context).languageCode);
+  }
+
   Future<void> _setNoticeHidden(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
@@ -1618,17 +2672,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       } else {
         _items.add(item);
       }
-      _widgetPinnedItemId = item.id;
       _sortItems();
     });
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_widgetPinnedItemIdKey, item.id);
-
     await _saveItems();
     await _updateHomeWidget();
-    await _scheduleNotifications(item);
-    await _scheduleTodaySummaryNotification();
+
+    // 중요: 실제 일정 저장 직후에는 알림 예약을 반드시 완료한 뒤 다음 단계로 넘어갑니다.
+    // 이전처럼 unawaited()로 백그라운드 분리하면 일부 기기/상황에서 사용자가 홈으로 나가거나
+    // 앱 생명주기가 바뀌는 순간 예약이 누락될 수 있습니다.
+    final scheduledOk = await _scheduleNotifications(item);
+    unawaited(_scheduleTodaySummaryNotification());
+    unawaited(_maybeShowReviewPrompt());
+
+    if (mounted && item.alarmMinutesBefore != -1 && !scheduledOk) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            L.of(context).pick(
+              ko: '알림 시간이 이미 지났거나 권한 문제로 예약하지 못했어요.',
+              en: 'The reminder time has passed or permission is blocking scheduling.',
+              ja: '通知時刻が過ぎたか、権限の問題で予約できませんでした。',
+              vi: 'Giờ nhắc đã qua hoặc quyền đang chặn việc đặt nhắc nhở.',
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   DateTime _alarmTimeForTarget(DdayItem item, DateTime target) {
@@ -1778,30 +2849,49 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _scheduleNotifications(DdayItem item) async {
+  Future<bool> _scheduleNotifications(DdayItem item) async {
     final notificationId = NotificationService.idFromString(item.id);
     if (!_globalReminderEnabled) {
       await NotificationService.cancel(notificationId);
-      return;
+      return false;
     }
     await NotificationService.cancel(notificationId);
 
     final plan = _nextNotificationPlan(item);
-    if (plan == null) return;
+    if (plan == null) return false;
 
     final bodyPrefix = plan.fallbackToTargetTime ? L.of(context).pick(ko: '알림 시간이 지나 D-day 정각으로 보정됨', en: 'Reminder time passed, adjusted to event time', ja: '通知時刻が過ぎたため予定時刻に調整しました', vi: 'Giờ nhắc đã qua, chuyển sang giờ sự kiện') : _alarmText(item.alarmMinutesBefore);
 
-    await NotificationService.schedule(
+    final nTitle = L.of(context).pick(ko: 'D-day 알림: ${item.title}', en: 'D-day reminder: ${item.title}', ja: 'D-day通知: ${item.title}', vi: 'Nhắc D-day: ${item.title}');
+    final nBody = '$bodyPrefix · ${_fullDate(plan.target)} ${_timeText(TimeOfDay.fromDateTime(plan.target))}';
+    // strong mode: fullScreen=true skips zonedSchedule (release-safe, mirrors test button path)
+    // normal mode: fullScreen=false → zonedSchedule attempted
+    final scheduled = await NotificationService.schedule(
       id: notificationId,
-      title: L.of(context).pick(ko: 'D-day 알림: ${item.title}', en: 'D-day reminder: ${item.title}', ja: 'D-day通知: ${item.title}', vi: 'Nhắc D-day: ${item.title}'),
-      body: '$bodyPrefix · ${_fullDate(plan.target)} ${_timeText(TimeOfDay.fromDateTime(plan.target))}',
+      title: nTitle,
+      body: nBody,
       scheduledAt: plan.alarmAt,
-      payload: item.id,
+      payload: '__alarm__:${item.id}',
+      fullScreen: _strongAlarmMode,
     );
+    // Always call native alarm regardless of Flutter zonedSchedule result.
+    // In release builds zonedSchedule may fail; native AlarmManager is the reliable path.
+    await NativeAlarmService.scheduleAlarm(
+      alarmId: notificationId,
+      scheduledAt: plan.alarmAt,
+      title: nTitle,
+      body: nBody,
+      itemId: item.id,
+      memo: item.memo,
+      strong: _strongAlarmMode,
+    );
+    return scheduled || _strongAlarmMode;
   }
 
   Future<void> _deleteItem(DdayItem item) async {
-    await NotificationService.cancel(NotificationService.idFromString(item.id));
+    // Release 빌드에서 알림 취소가 먼저 실행되면 기기/권한 상태에 따라 삭제 UI가
+    // 늦거나 멈춘 것처럼 보일 수 있습니다. 먼저 화면과 저장소에서 제거하고,
+    // 알림 취소는 뒤에서 시도합니다.
     setState(() {
       _items.removeWhere((e) => e.id == item.id);
       _trashItems.removeWhere((e) => e.id == item.id);
@@ -1822,9 +2912,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _saveItems();
     await _saveTrashItems();
     await _updateHomeWidget();
-    await _scheduleTodaySummaryNotification();
+
+    unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    unawaited(NativeAlarmService.cancelAlarm(NotificationService.idFromString(item.id)));
+    unawaited(_scheduleTodaySummaryNotification());
 
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(L.of(context).pick(ko: '휴지통으로 이동했어요.', en: 'Moved to trash.', ja: 'ゴミ箱に移動しました。', vi: 'Đã chuyển vào thùng rác.')),
@@ -1837,17 +2931,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreTrashItem(DdayItem item) async {
+    final canRestore = _trashItems.any((e) => e.id == item.id);
+    if (!canRestore) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      _showInfoSnack(L.of(context).pick(
+        ko: '이미 완전히 삭제된 일정이에요.',
+        en: 'This event was permanently deleted.',
+        ja: 'この予定は完全に削除されています。',
+        vi: 'Sự kiện này đã bị xóa vĩnh viễn.',
+      ));
+      return;
+    }
+
     setState(() {
       _trashItems.removeWhere((e) => e.id == item.id);
       if (!_items.any((e) => e.id == item.id)) {
         _items.add(item);
       }
-      _widgetPinnedItemId = item.id;
       _sortItems();
     });
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_widgetPinnedItemIdKey, item.id);
     await _saveItems();
     await _saveTrashItems();
     await _scheduleNotifications(item);
@@ -1863,15 +2967,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _trashItems.removeWhere((e) => e.id == item.id);
     });
     await _saveTrashItems();
+    await _markWidgetItemsPermanentlyDeleted([item.id]);
+    unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    unawaited(_scheduleTodaySummaryNotification());
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     _showInfoSnack(L.of(context).pick(ko: '완전히 삭제했어요.', en: 'Permanently deleted.', ja: '完全に削除しました。', vi: 'Đã xóa vĩnh viễn.'));
   }
 
   Future<void> _emptyTrash() async {
     if (_trashItems.isEmpty) return;
+    final deletedItems = List<DdayItem>.from(_trashItems);
     setState(() => _trashItems.clear());
     await _saveTrashItems();
+    await _markWidgetItemsPermanentlyDeleted(deletedItems.map((e) => e.id));
+    for (final item in deletedItems) {
+      unawaited(NotificationService.cancel(NotificationService.idFromString(item.id)));
+    }
+    unawaited(_scheduleTodaySummaryNotification());
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     _showInfoSnack(L.of(context).pick(ko: '휴지통을 비웠어요.', en: 'Trash emptied.', ja: 'ゴミ箱を空にしました。', vi: 'Đã dọn thùng rác.'));
   }
 
@@ -2113,8 +3228,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showFirstCardCelebration() {
-    final overlay = Overlay.maybeOf(context);
-    if (overlay == null) return;
+    if (!mounted) return;
 
     final l = L.of(context);
     final messages = [
@@ -2139,14 +3253,45 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
     final message = messages[math.Random().nextInt(messages.length)];
 
-    late final OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (_) => _FirstCardCelebrationOverlay(
-        message: message,
-        onDone: () => entry.remove(),
-      ),
-    );
-    overlay.insert(entry);
+    Future<void>.delayed(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1800),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      final overlay = Overlay.maybeOf(context, rootOverlay: true) ?? Overlay.maybeOf(context);
+      if (overlay == null) return;
+
+      late final OverlayEntry entry;
+      entry = OverlayEntry(
+        builder: (_) => _FirstCardCelebrationOverlay(
+          message: message,
+          onDone: () {
+            if (entry.mounted) entry.remove();
+          },
+        ),
+      );
+
+      try {
+        overlay.insert(entry);
+      } catch (_) {
+        // 스낵바는 이미 표시했으므로 추가 처리 없음
+      }
+    });
+  }
+
+  void _confirmDeleteAfterClosingSheet(DdayItem item) {
+    // 휴지통 + 되돌리기가 있으므로 release 안정성을 위해 확인창을 거치지 않고 바로 이동합니다.
+    Future<void>.delayed(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      unawaited(_deleteItem(item));
+    });
   }
 
   void _showDetail(DdayItem item) {
@@ -2242,7 +3387,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           child: FilledButton(
                             onPressed: () {
                               Navigator.pop(context);
-                              _confirmDelete(item);
+                              _confirmDeleteAfterClosingSheet(item);
                             },
                             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF111827), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                             child: Text(L.of(context).delete, style: TextStyle(fontWeight: FontWeight.w700)),
@@ -2331,9 +3476,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 Navigator.pop(context);
                 _copyItem(item);
               }),
+              _menuTile(
+                Icons.widgets_outlined,
+                L.of(context).pick(ko: '홈 위젯에 추가', en: 'Add to home widget', ja: 'ホームウィジェットに追加', vi: 'Thêm vào widget'),
+                () {
+                  Navigator.pop(context);
+                  _requestPinHomeWidget(wide: false, pinnedItem: item);
+                },
+              ),
               _menuTile(Icons.delete_outline, L.of(context).delete, () {
                 Navigator.pop(context);
-                _confirmDelete(item);
+                _confirmDeleteAfterClosingSheet(item);
               }, danger: true),
             ],
           ),
@@ -2350,40 +3503,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _requestPinHomeWidget({required bool wide}) async {
+  Future<void> _requestPinHomeWidget({required bool wide, DdayItem? pinnedItem, bool useNearestForSmall = false}) async {
     final providerName = wide ? 'DdayWidgetProviderWide' : 'DdayWidgetProvider';
     final widgetLabel = wide ? L.of(context).pick(ko: '넓은 위젯(2개 표시)', en: 'Wide widget (2 events)', ja: '横長ウィジェット（2件）', vi: 'Widget rộng (2 sự kiện)') : L.of(context).pick(ko: '작은 위젯(1개 표시)', en: 'Small widget (1 event)', ja: '小さいウィジェット（1件）', vi: 'Widget nhỏ (1 sự kiện)');
 
-    await _updateHomeWidget();
+    if (wide) {
+      await _updateHomeWidget();
+    } else {
+      final itemToPin = pinnedItem ?? _nearestWidgetItem();
+      await _savePendingSmallWidgetItem(itemToPin);
+    }
+    if (!mounted) return;
 
-    bool supported = false;
+    bool requested = false;
+
+    // Release-safe path: call our native Android requestPinAppWidget directly first.
+    // The previous HomeWidget plugin path could fall back to the manual guide on release builds
+    // because the qualified provider name was still the old com.example.dday_app path.
     try {
-      supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+      requested = await WidgetDeepLinkService.requestPinHomeWidget(providerName) ?? false;
     } catch (_) {
-      supported = false;
+      requested = false;
+    }
+
+    // Fallback to the plugin with the real application package name.
+    if (!requested) {
+      try {
+        requested = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+        if (requested) {
+          await HomeWidget.requestPinWidget(
+            name: providerName,
+            androidName: providerName,
+            qualifiedAndroidName: 'com.forgeapps.tickday.$providerName',
+          );
+        }
+      } catch (_) {
+        requested = false;
+      }
     }
 
     if (!mounted) return;
 
-    if (!supported) {
-      await _showManualWidgetGuide(widgetLabel);
+    if (requested) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(L.of(context).pick(ko: '$widgetLabel 추가 창을 열었습니다.', en: '$widgetLabel add screen opened.', ja: '$widgetLabel の追加画面を開きました。', vi: 'Đã mở màn hình thêm $widgetLabel.'))),
+      );
       return;
     }
 
-    try {
-      await HomeWidget.requestPinWidget(
-        name: providerName,
-        androidName: providerName,
-        qualifiedAndroidName: 'com.example.dday_app.$providerName',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(L.of(context).pick(ko: '$widgetLabel 추가 요청을 보냈습니다. 홈 화면에서 확인해보세요.', en: '$widgetLabel add request sent. Check your home screen.', ja: '$widgetLabel の追加リクエストを送信しました。ホーム画面を確認してください。', vi: 'Đã gửi yêu cầu thêm $widgetLabel. Hãy kiểm tra màn hình chính.'))),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      await _showManualWidgetGuide(widgetLabel);
-    }
+    await _showManualWidgetGuide(widgetLabel);
   }
 
   Future<void> _showManualWidgetGuide(String widgetLabel) async {
@@ -2459,7 +3627,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => WidgetPreviewPage(
           items: previewItems,
-          onAddSmall: () => _requestPinHomeWidget(wide: false),
+          onAddSmall: () => _requestPinHomeWidget(wide: false, useNearestForSmall: true),
           onAddWide: () => _requestPinHomeWidget(wide: true),
         ),
       ),
@@ -2534,18 +3702,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   _drawerTile(Icons.widgets_rounded, l.pick(ko: '홈 위젯 추가', en: 'Add home widget', ja: 'ホームウィジェット追加', vi: 'Thêm widget'), () { Navigator.pop(context); _showWidgetPlanSheet(); }),
                   _drawerTile(Icons.notifications_active_rounded, l.pick(ko: '알림 설정', en: 'Reminder settings', ja: '通知設定', vi: 'Cài đặt nhắc nhở'), () { Navigator.pop(context); _showGlobalReminderSettingsSheet(); }),
                   _drawerTile(Icons.language_rounded, l.pick(ko: '언어 설정', en: 'Language', ja: '言語設定', vi: 'Ngôn ngữ'), () { Navigator.pop(context); _showLanguageSheet(); }, trailingText: _languageName(currentCode)),
-                  _drawerTile(Icons.palette_rounded, l.pick(ko: '테마 설정', en: 'Theme', ja: 'テーマ', vi: 'Giao diện'), () { Navigator.pop(context); _showThemeComingSoon(); }),
+                  _drawerTile(
+                    Icons.palette_rounded,
+                    l.pick(ko: '테마 설정', en: 'Theme', ja: 'テーマ', vi: 'Giao diện'),
+                    null,
+                    disabled: true,
+                    trailingText: l.pick(ko: '준비중', en: 'Soon', ja: '準備中', vi: 'Sắp có'),
+                  ),
                   _drawerTile(Icons.delete_outline_rounded, l.pick(ko: '휴지통', en: 'Trash', ja: 'ゴミ箱', vi: 'Thùng rác'), () { Navigator.pop(context); _openTrashPage(); }, trailingText: _trashItems.isEmpty ? null : '${_trashItems.length}'),
                   const Padding(padding: EdgeInsets.symmetric(horizontal: 18, vertical: 8), child: Divider(height: 1)),
-                  _drawerTile(Icons.privacy_tip_outlined, l.pick(ko: '개인정보 처리방침', en: 'Privacy policy', ja: 'プライバシーポリシー', vi: 'Chính sách bảo mật'), () { Navigator.pop(context); Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _LegalPage(type: 'privacy'))); }),
-                  _drawerTile(Icons.description_outlined, l.pick(ko: '이용약관', en: 'Terms of use', ja: '利用規約', vi: 'Điều khoản sử dụng'), () { Navigator.pop(context); Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _LegalPage(type: 'terms'))); }),
+                  _drawerTile(Icons.privacy_tip_outlined, l.pick(ko: '개인정보 처리방침', en: 'Privacy policy', ja: 'プライバシーポリシー', vi: 'Chính sách bảo mật'), () { Navigator.pop(context); _openExternalUrl(_privacyPolicyUrl, fallbackType: 'privacy'); }),
+                  _drawerTile(Icons.description_outlined, l.pick(ko: '이용약관', en: 'Terms of use', ja: '利用規約', vi: 'Điều khoản sử dụng'), () { Navigator.pop(context); _openExternalUrl(_termsOfUseUrl, fallbackType: 'terms'); }),
                   _drawerTile(Icons.info_outline_rounded, l.pick(ko: '앱 정보', en: 'App info', ja: 'アプリ情報', vi: 'Thông tin ứng dụng'), () { Navigator.pop(context); _showAppInfoSheet(); }),
                 ],
               ),
             ),
             const Padding(
               padding: EdgeInsets.only(bottom: 16),
-              child: Text('Version 1.0.0', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF9CA3AF))),
+              child: Text('Version 1.0.4', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF9CA3AF))),
             ),
           ],
         ),
@@ -2553,8 +3727,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _drawerTile(IconData icon, String title, VoidCallback onTap, {bool selected = false, String? trailingText}) {
-    final color = selected ? const Color(0xFF111827) : const Color(0xFF111827);
+  Widget _drawerTile(IconData icon, String title, VoidCallback? onTap, {bool selected = false, bool disabled = false, String? trailingText}) {
+    final color = disabled ? const Color(0xFF9CA3AF) : const Color(0xFF111827);
+    final trailingColor = disabled ? const Color(0xFFB0B7C3) : const Color(0xFF6B7280);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Material(
@@ -2562,7 +3737,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
+          onTap: disabled ? null : onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
@@ -2570,7 +3745,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 Icon(icon, color: color, size: 22),
                 const SizedBox(width: 14),
                 Expanded(child: Text(title, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: color))),
-                if (trailingText != null) Text(trailingText, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF6B7280))),
+                if (trailingText != null) Text(trailingText, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: trailingColor)),
               ],
             ),
           ),
@@ -2841,6 +4016,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.alarm_rounded, color: _strongAlarmMode ? const Color(0xFF111827) : const Color(0xFF9CA3AF)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(l.pick(ko: '강한 알람 모드', en: 'Strong alarm mode', ja: '強いアラームモード', vi: 'Chế độ báo thức mạnh'), style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
+                                const SizedBox(height: 2),
+                                Text(l.pick(ko: '알람 발생 시 반복 멜로디를 재생합니다.', en: 'Plays a repeating melody when an alarm fires.', ja: 'アラーム発生時にメロディーをループ再生します。', vi: 'Phát âm thanh lặp lại khi báo thức.'), style: const TextStyle(fontSize: 12.3, height: 1.25, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: _strongAlarmMode,
+                            activeColor: const Color(0xFF2563EB),
+                            onChanged: (v) async {
+                              sheetSetState(() => _strongAlarmMode = v);
+                              setState(() => _strongAlarmMode = v);
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.setBool(_strongAlarmModeKey, v);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     Text(l.pick(ko: '새 일정 기본 알림', en: 'Default reminder for new events', ja: '新しい予定の初期通知', vi: 'Nhắc mặc định cho sự kiện mới'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
                     const SizedBox(height: 10),
@@ -2956,6 +4166,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refreshNow();
   }
 
+  Future<void> _openExternalUrl(String url, {required String fallbackType}) async {
+    final uri = Uri.parse(url);
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (opened || !mounted) return;
+    } catch (_) {
+      if (!mounted) return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => _LegalPage(type: fallbackType)));
+  }
+
   void _showThemeComingSoon() {
     _showInfoSnack(L.of(context).pick(ko: '테마 설정은 다음 업데이트에서 제공됩니다.', en: 'Theme settings are coming in the next update.', ja: 'テーマ設定は次回アップデートで提供予定です。', vi: 'Cài đặt giao diện sẽ có trong bản cập nhật tới.'));
   }
@@ -2973,7 +4194,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     showAboutDialog(
       context: context,
       applicationName: 'TickDay',
-      applicationVersion: '1.0.0',
+      applicationVersion: '1.0.4',
       applicationIcon: Container(
         width: 48,
         height: 48,
@@ -2999,6 +4220,71 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(L.of(context).pick(ko: '알림을 보냈습니다.', en: 'Notification sent.', ja: '通知を送信しました。', vi: 'Đã gửi thông báo.'))),
+    );
+  }
+
+  // ⚠️ 풀스크린 알림 테스트 (1차 안전버전)
+  Future<void> _sendFullScreenNotificationTest() async {
+    final scheduledAt = DateTime.now().add(const Duration(seconds: 10));
+    final scheduledOk = await NotificationService.schedule(
+      id: 999889,
+      title: L.of(context).pick(
+        ko: '풀스크린 알림 테스트',
+        en: 'Full-Screen Test',
+        ja: 'フルスクリーン通知テスト',
+        vi: 'Kiểm tra toàn màn hình',
+      ),
+      body: L.of(context).pick(
+        ko: 'TickDay 풀스크린 알림이 작동하는지 확인합니다.',
+        en: 'Checking if full-screen notifications work.',
+        ja: 'フルスクリーン通知の動作確認中です。',
+        vi: 'Đang kiểm tra thông báo toàn màn hình.',
+      ),
+      scheduledAt: scheduledAt,
+      payload: '__fullscreen_auto__',
+      fullScreen: true,
+    );
+
+    // For testing strong (full-screen) alarms, also schedule the native alarm
+    // so we can observe native FullScreen behavior without Flutter's zonedSchedule.
+    if (scheduledOk) {
+      unawaited(NativeAlarmService.scheduleAlarm(
+        alarmId: 999889,
+        scheduledAt: scheduledAt,
+        title: L.of(context).pick(
+          ko: '풀스크린 알림 테스트',
+          en: 'Full-Screen Test',
+          ja: 'フルスクリーン通知テスト',
+          vi: 'Kiểm tra toàn màn hình',
+        ),
+        body: L.of(context).pick(
+          ko: 'TickDay 풀스크린 알림이 작동하는지 확인합니다.',
+          en: 'Checking if full-screen notifications work.',
+          ja: 'フルスクリーン通知の動作確認中です。',
+          vi: 'Đang kiểm tra thông báo toàn màn hình.',
+        ),
+        itemId: '__fullscreen_test__',
+        memo: null,
+        strong: true,
+      ));
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(L.of(context).pick(
+        ko: scheduledOk
+          ? '알림 예약 완료\n10초 후 전체 화면 알림이 표시됩니다'
+          : '풀스크린 알림 예약에 실패했습니다.',
+        en: scheduledOk
+            ? 'Full-screen notification scheduled. Overlay will show in 10 seconds.'
+            : 'Failed to schedule full-screen notification.',
+        ja: scheduledOk
+            ? 'フルスクリーン通知を予約しました。10秒後にOverlayが表示されます。'
+            : 'フルスクリーン通知の予約に失敗しました。',
+        vi: scheduledOk
+            ? 'Đã lên lịch thông báo toàn màn hình. Overlay sẽ hiển thị sau 10 giây.'
+            : 'Lên lịch thông báo toàn màn hình không thành công.',
+      ))),
     );
   }
 
@@ -3059,6 +4345,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               await _sendQuickNotificationTest();
                             },
                           ),
+                          const SizedBox(height: 6),
+                          // ⚠️ 풀스크린 알림 테스트 메뉴 (1차 안전버전)
+                          _quickMenuTile(
+                            icon: Icons.fullscreen_rounded,
+                            title: L.of(context).pick(ko: '알림 미리보기', en: 'Full-Screen Test', ja: 'フルスクリーンテスト', vi: 'Kiểm tra toàn màn hình'),
+                            subtitle: L.of(context).pick(ko: '전체 화면 알림 미리 체험', en: 'Test full-screen overlay', ja: 'Overlay表示テスト', vi: 'Kiểm tra Overlay'),
+                            onTap: () async {
+                              Navigator.of(dialogContext).pop();
+                              await _sendFullScreenNotificationTest();
+                            },
+                          ),
+                          const SizedBox(height: 6),
                           _quickMenuTile(
                             icon: Icons.schedule_rounded,
                             title: L.of(context).pick(ko: '오늘 요약 설정', en: 'Today summary settings', ja: '今日のまとめ設定', vi: 'Cài đặt tóm tắt hôm nay'),
@@ -3369,6 +4667,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             child: const Icon(Icons.add, size: 25),
           ),
         ),
+	/*
+        bottomNavigationBar: (_isBannerAdReady && _bannerAd != null)
+            ? SafeArea(
+                top: false,
+                child: Container(
+                  alignment: Alignment.center,
+                  width: double.infinity,
+                  height: _bannerAd!.size.height.toDouble(),
+                  color: Colors.white,
+                  child: AdWidget(ad: _bannerAd!),
+                ),
+              )
+            : null,
+	    */
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async {
@@ -3419,13 +4731,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _roundButton(Icons.menu, () => _scaffoldKey.currentState?.openDrawer()),
             const SizedBox(width: 14),
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(L.of(context).appTitle, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Color(0xFF111827), letterSpacing: -0.8)),
-                  SizedBox(height: 2),
-                  Text(L.of(context).subtitle, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+                  Image.asset(
+                    'assets/logo_tickday.png',
+                    height: 64,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          L.of(context).appTitle,
+                          style: GoogleFonts.alfaSlabOne(
+                            fontSize: 28,
+                            color: const Color(0xFFC0392B),
+                            letterSpacing: 0.5,
+                            shadows: const [
+                              Shadow(color: Color(0x33000000), offset: Offset(1, 1.5), blurRadius: 2),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          L.of(context).subtitle,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
