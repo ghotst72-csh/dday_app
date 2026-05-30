@@ -47,7 +47,7 @@ class NotificationService {
     }
   }
 
-  static Future init() async {
+  static Future<void> init() async {
     tz.initializeTimeZones();
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -57,7 +57,7 @@ class NotificationService {
   }
 
   // ✅ 복수형 (main.dart 호환용)
-  static Future scheduleDdayNotifications({
+  static Future<void> scheduleDdayNotifications({
     required int id,
     required String title,
     required DateTime targetDate,
@@ -70,7 +70,7 @@ class NotificationService {
   }
 
   // ✅ 실제 알림
-  static Future scheduleDdayNotification({
+  static Future<void> scheduleDdayNotification({
     required int id,
     required String title,
     required DateTime targetDate,
@@ -96,6 +96,8 @@ class NotificationService {
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
       );
     }
 
@@ -115,6 +117,8 @@ class NotificationService {
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
       );
     }
   }
