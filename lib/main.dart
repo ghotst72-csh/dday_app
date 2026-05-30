@@ -3073,16 +3073,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _dDayText(DdayItem item) {
     final days = _daysLeft(item);
     if (days == 0) return 'D-Day';
-    return 'D-${days.abs()}';
+    if (days > 0) return 'D-$days';
+    return 'D+${days.abs()}';
   }
 
   String _cardEmotionLine(DdayItem item) {
     final l = L.of(context);
-    final d = _timeLeft(item);
-    final days = d.inDays;
+    final days = _daysLeft(item);
     final title = item.title.toLowerCase();
 
-    if (d.isNegative || days == 0) {
+    if (days < 0) {
+      return l.pick(ko: '지난 일정이에요', en: 'This event has passed', ja: 'すでに過ぎた予定です', vi: 'Sự kiện này đã qua');
+    }
+    if (days == 0) {
       return l.pick(ko: '오늘이 바로 그날이에요 💜', en: 'Today is the day 💜', ja: '今日はその日です 💜', vi: 'Hôm nay là ngày đó 💜');
     }
     if (days <= 2) {
@@ -5271,8 +5274,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final ddaySize = isLandscape ? 27.0 : 30.0;
     final titleSize = isLandscape ? 12.8 : 13.2;
     final subtitleSize = isLandscape ? 10.3 : 11.2;
+    final isExpired = days < 0 &&
+        item.repeatType != 'yearly' &&
+        item.repeatType != 'monthly' &&
+        item.repeatType != 'weekly';
 
-    return Material(
+    final Widget card = Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(radius),
       clipBehavior: Clip.antiAlias,
@@ -5463,6 +5470,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
+    return isExpired ? Opacity(opacity: 0.65, child: card) : card;
   }
 
   Widget _listView() {
@@ -6146,7 +6154,8 @@ class _EditPageState extends State<EditPage> {
   String _editDdayText() {
     final days = _daysUntil();
     if (days == 0) return 'D-Day';
-    return 'D-${days.abs()}';
+    if (days > 0) return 'D-$days';
+    return 'D+${days.abs()}';
   }
 
   Future<void> _pickDate() async {

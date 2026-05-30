@@ -72,6 +72,14 @@ class AlarmReceiver : BroadcastReceiver() {
             putExtra("body", body)
             if (memo != null) putExtra("memo", memo)
         }
+        val itemId = context.getSharedPreferences("tickday_alarms", Context.MODE_PRIVATE)
+            .getString("item_id_$scheduleId", null)
+        if (itemId != null) {
+            mainIntent.data = android.net.Uri.parse("tickday://widget/$itemId")
+            AlarmTrace.step(AREA, "mainIntent deeplink set tickday://widget/$itemId")
+        } else {
+            AlarmTrace.step(AREA, "mainIntent deeplink skipped: item_id_$scheduleId not found")
+        }
         AlarmTrace.state(AREA, "mainIntent.action", mainIntent.action)
 
         // notificationId는 항상 baseId 고정 — flutter_local_notifications 알림과 같은 ID를
