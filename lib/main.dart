@@ -427,7 +427,10 @@ class NativeAlarmService {
   NativeAlarmService._();
   static const MethodChannel _channel = MethodChannel('com.tickday/alarm');
 
-  static Future<void> scheduleAlarm({
+  // 네이티브 AlarmManager 예약 성공 여부를 상위(_scheduleNotifications)로
+  // 전달하기 위해 Future<bool>로 반환합니다. 예약이 정상 호출되면 true,
+  // 메서드 채널 호출이 예외로 실패하면 false를 반환합니다.
+  static Future<bool> scheduleAlarm({
     required int alarmId,
     required DateTime scheduledAt,
     String? title,
@@ -452,9 +455,11 @@ class NativeAlarmService {
       // Additional concise logs for requested trace
       print('[NativeAlarmService] scheduleAlarm called');
       print('[NativeAlarmService] alarm scheduled requestCode=$alarmId');
+      return true;
     } catch (ex) {
       print('[TickDayAlarm][${DateTime.now().toIso8601String()}][NativeAlarmService] scheduleAlarm failed alarmId=$alarmId exception=${ex}');
       print('[NativeAlarmService] FAILED scheduleAlarm alarmId=$alarmId exception=${ex}');
+      return false;
     }
   }
 
@@ -1879,6 +1884,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Timer? _clockTimer;
+  Timer? _trashSnackTimer;
   String? _pendingNotificationItemId;
   bool _reviewPromptCheckedThisSession = false;
   BannerAd? _bannerAd;
@@ -1907,6 +1913,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _trashSnackTimer?.cancel();
     if (NotificationService.onNotificationClick == _handleNotificationPayload) {
       NotificationService.onNotificationClick = null;
     }
@@ -2476,6 +2483,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   String _widgetRemainText(DdayItem item) {
     final l = L.of(context);
+    if (_daysLeft(item) < 0) {
+      return l.pick(ko: '지난 일정이에요', en: 'This event has passed', ja: 'すでに過ぎた予定です', vi: 'Sự kiện này đã qua');
+    }
     final d = _timeLeft(item);
     if (d.isNegative) return l.pick(ko: '오늘입니다', en: 'Today', ja: '今日です', vi: 'Hôm nay');
     final days = d.inDays;
@@ -2633,8 +2643,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _upsertItem(DdayItem item) async {
+  Future<void> _upsertItem(DdayItem item, {bool showSaveToast = true}) async {
     final index = _items.indexWhere((e) => e.id == item.id);
+    final isNew = index < 0;
     setState(() {
       if (index >= 0) {
         _items[index] = item;
@@ -2644,7 +2655,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _sortItems();
     });
 
-    await _saveItems();
+    // 실제 DB(SharedPreferences) 저장 성공 여부를 추적합니다.
+    // 저장이 예외 없이 완료된 경우에만 신규/수정 안내 메시지를 표시합니다.
+    var savedOk = true;
+    try {
+      await _saveItems();
+    } catch (e, s) {
+      savedOk = false;
+      debugPrint('[TickDay] _saveItems failed: $e');
+      debugPrintStack(stackTrace: s);
+    }
     await _updateHomeWidget();
 
     // 중요: 실제 일정 저장 직후에는 알림 예약을 반드시 완료한 뒤 다음 단계로 넘어갑니다.
@@ -2665,6 +2685,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ja: '通知時刻が過ぎたか、権限の問題で予約できませんでした。',
               vi: 'Giờ nhắc đã qua hoặc quyền đang chặn việc đặt nhắc nhở.',
             ),
+          ),
+        ),
+      );
+    } else if (mounted && savedOk && showSaveToast) {
+      // 알림 실패 토스트가 없고, DB 저장이 실제로 성공했으며,
+      // 호출부에서 자체 안내를 처리하지 않는 경우에만
+      // 신규 등록/수정 안내 메시지를 표시합니다.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isNew
+                ? L.of(context).pick(
+                    ko: '일정이 저장되었어요',
+                    en: 'New schedule saved',
+                    ja: '予定を保存しました',
+                    vi: 'Đã lưu lịch mới',
+                  )
+                : L.of(context).pick(
+                    ko: '일정이 수정되었어요',
+                    en: 'Schedule updated',
+                    ja: '予定を更新しました',
+                    vi: 'Đã cập nhật lịch',
+                  ),
           ),
         ),
       );
@@ -2827,7 +2870,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await NotificationService.cancel(notificationId);
 
     final plan = _nextNotificationPlan(item);
-    if (plan == null) return false;
+    // plan == null 은 "예약할 알림이 없음"을 의미하며 실패가 아닙니다.
+    //  - item.alarmMinutesBefore == -1 (알림 꺼짐)
+    //  - target 시간이 이미 과거여서 예약 대상이 아님 (과거 일정)
+    // 이 경우 기존 예약만 취소(위에서 cancel 완료)하고 정상 스킵으로 true를 반환해
+    // 실패 토스트가 뜨지 않도록 합니다. 실제 예약 실패는 아래 미래 일정
+    // 예약 경로에서만 false가 됩니다.
+    if (plan == null) return true;
 
     final bodyPrefix = plan.fallbackToTargetTime ? L.of(context).pick(ko: '알림 시간이 지나 D-day 정각으로 보정됨', en: 'Reminder time passed, adjusted to event time', ja: '通知時刻が過ぎたため予定時刻に調整しました', vi: 'Giờ nhắc đã qua, chuyển sang giờ sự kiện') : _alarmText(item.alarmMinutesBefore);
 
@@ -2845,7 +2894,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     // Always call native alarm regardless of Flutter zonedSchedule result.
     // In release builds zonedSchedule may fail; native AlarmManager is the reliable path.
-    await NativeAlarmService.scheduleAlarm(
+    final nativeOk = await NativeAlarmService.scheduleAlarm(
       alarmId: notificationId,
       scheduledAt: plan.alarmAt,
       title: nTitle,
@@ -2854,7 +2903,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       memo: item.memo,
       strong: _strongAlarmMode,
     );
-    return scheduled || _strongAlarmMode;
+    // 성공 판단은 "둘 중 하나라도 실제 예약에 성공했는가"로 합니다.
+    // - 일반 모드: Flutter zonedSchedule이 실패(false)해도 네이티브 AlarmManager가
+    //   성공하면 알림은 정상 도착하므로 성공으로 간주합니다. (오탐 토스트 방지)
+    // - 강한 알림 모드: NotificationService.schedule이 zonedSchedule을 건너뛰고
+    //   true를 반환하며, 네이티브 경로로 풀스크린 알림이 울리므로 동작 유지됩니다.
+    // plan == null(진짜 과거)인 경우는 위에서 이미 false로 반환되었습니다.
+    return scheduled || nativeOk;
   }
 
   Future<void> _deleteItem(DdayItem item) async {
@@ -2887,9 +2942,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(_scheduleTodaySummaryNotification());
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
+    // 직전에 떠 있던 스낵바를 즉시 제거하고 새로 표시합니다.
+    // duration을 명시해 자동으로 사라지도록 보장합니다(미지정 시 동작이 불안정할 수 있음).
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
+        duration: const Duration(seconds: 4),
         content: Text(L.of(context).pick(ko: '휴지통으로 이동했어요.', en: 'Moved to trash.', ja: 'ゴミ箱に移動しました。', vi: 'Đã chuyển vào thùng rác.')),
         action: SnackBarAction(
           label: L.of(context).pick(ko: '되돌리기', en: 'Undo', ja: '元に戻す', vi: 'Hoàn tác'),
@@ -2897,6 +2956,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
+    // 하단 배너 광고 등이 주기적으로 리빌드되면 SnackBar 내부 자동 타이머가
+    // 리셋되어 스낵바가 닫히지 않는 현상이 있습니다. 외부 타이머로 4.5초 후
+    // 명시적으로 닫아 광고 리빌드와 무관하게 확실히 사라지도록 보장합니다.
+    // (되돌리기/휴지통 기능에는 영향 없음 — 단순히 안내 스낵바만 닫음)
+    _trashSnackTimer?.cancel();
+    _trashSnackTimer = Timer(const Duration(milliseconds: 4500), () {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    });
   }
 
   Future<void> _restoreTrashItem(DdayItem item) async {
@@ -2989,7 +3057,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final target = _effectiveTarget(item);
     final today = DateTime(now.year, now.month, now.day);
     final targetDay = DateTime(target.year, target.month, target.day);
-    return targetDay.difference(today).inDays;
+    final dayDiff = targetDay.difference(today).inDays;
+
+    // 날짜가 다른 경우는 기존과 동일하게 날짜 차이로 판단합니다.
+    //  - 내일 → 1 (D-1), 어제 → -1 (D+1)
+    if (dayDiff != 0) return dayDiff;
+
+    // 같은 날(오늘)인 경우, 시각까지 포함해 판단합니다.
+    //  - target 시각이 아직 안 지났으면 0 (D-Day / 오늘 일정)
+    //  - target 시각이 이미 지났으면 -1 (지난 일정으로 표시)
+    // 반복 일정(yearly 등)은 _effectiveTarget이 미래로 보정하므로 이 분기에서
+    // 과거가 되는 경우는 사실상 없지만, 안전하게 동일 규칙을 적용합니다.
+    if (target.isAfter(now)) return 0;
+    return -1;
   }
 
   Duration _timeLeft(DdayItem item) => _effectiveTarget(item).difference(DateTime.now());
@@ -3033,12 +3113,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   String _remainText(DdayItem item) {
     final l = L.of(context);
+    // D-Day 표시 함수(_daysLeft)와 동일한 기준을 사용해 문구가 어긋나지 않게 합니다.
+    final days = _daysLeft(item);
+    if (days < 0) {
+      return l.pick(ko: '지난 일정이에요', en: 'This event has passed', ja: 'すでに過ぎた予定です', vi: 'Sự kiện này đã qua');
+    }
     final d = _timeLeft(item);
-    if (d.isNegative) return l.pick(ko: '오늘입니다', en: 'Today', ja: '今日です', vi: 'Hôm nay');
-    final days = d.inDays;
+    if (d.isNegative) {
+      // 같은 날이고 _daysLeft == 0 인데 시각이 막 지난 경계 상황: 오늘로 표기
+      return l.pick(ko: '오늘입니다', en: 'Today', ja: '今日です', vi: 'Hôm nay');
+    }
+    final remainDays = d.inDays;
     final hours = d.inHours % 24;
     final minutes = d.inMinutes % 60;
-    return l.pick(ko: '${days}일 ${hours}시간 ${minutes}분 남음', en: '${days}d ${hours}h ${minutes}m left', ja: 'あと${days}日${hours}時間${minutes}分', vi: 'Còn ${days} ngày ${hours} giờ ${minutes} phút');
+    return l.pick(ko: '${remainDays}일 ${hours}시간 ${minutes}분 남음', en: '${remainDays}d ${hours}h ${minutes}m left', ja: 'あと${remainDays}日${hours}時間${minutes}分', vi: 'Còn ${remainDays} ngày ${hours} giờ ${minutes} phút');
   }
 
   String _eventMoodLabel(DdayItem item) {
@@ -3056,6 +3144,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return L.of(context).pick(ko: '업무 일정까지', en: 'Work event in', ja: '仕事の予定まで', vi: 'Đến lịch công việc');
       case 'gift':
         return L.of(context).pick(ko: '선물할 날까지', en: 'Gift day in', ja: '贈り物の日まで', vi: 'Đến ngày tặng quà');
+      case 'hospital':
+        return L.of(context).pick(ko: '병원 가는 날까지', en: 'Hospital day in', ja: '病院の日まで', vi: 'Đến ngày đi bệnh viện');
+      case 'medicine':
+        return L.of(context).pick(ko: '약 챙기는 날까지', en: 'Medicine day in', ja: '薬の日まで', vi: 'Đến ngày uống thuốc');
+      case 'salary':
+        return L.of(context).pick(ko: '월급날까지', en: 'Payday in', ja: '給料日まで', vi: 'Đến ngày lương');
+      case 'cardbill':
+        return L.of(context).pick(ko: '카드값 내는 날까지', en: 'Card bill due in', ja: 'カード支払日まで', vi: 'Đến ngày thanh toán thẻ');
+      case 'study':
+        return L.of(context).pick(ko: '시험까지', en: 'Exam in', ja: '試験まで', vi: 'Đến kỳ thi');
       default:
         if (title.contains('생일') || title.contains('birthday')) {
           return L.of(context).pick(ko: '생일까지', en: 'Birthday in', ja: '誕生日まで', vi: 'Đến sinh nhật');
@@ -3136,6 +3234,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return Icons.local_cafe;
       case 'fitness':
         return Icons.fitness_center;
+      // 추가된 아이콘 (기존 music/camera/coffee/cart/fitness 키는 호환을 위해 위에 유지)
+      case 'hospital':
+        return Icons.local_hospital;
+      case 'medicine':
+        return Icons.medication;
+      case 'salary':
+        return Icons.payments;
+      case 'cardbill':
+        return Icons.credit_card;
+      case 'study':
+        return Icons.menu_book;
       default:
         return Icons.star;
     }
@@ -3192,7 +3301,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       MaterialPageRoute(builder: (_) => EditPage(item: item)),
     );
     if (result != null) {
-      await _upsertItem(result);
+      // 첫 카드 생성 시에는 축하 연출이 주가 되므로 저장 안내 토스트는 생략하고,
+      // 그 외 일반 신규 등록/수정은 _upsertItem이 저장 성공 후 안내를 표시합니다.
+      await _upsertItem(result, showSaveToast: !shouldCelebrateFirstCard);
       if (shouldCelebrateFirstCard && mounted) {
         _showFirstCardCelebration();
       }
@@ -3271,7 +3382,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) {
+      builder: (sheetContext) {
         final color = Color(item.colorValue);
         return SafeArea(
           child: Center(
@@ -3308,7 +3419,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             ],
                           ),
                         ),
-                        IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                        IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
                       ],
                     ),
                     const SizedBox(height: 22),
@@ -3347,8 +3458,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         Expanded(
                           child: OutlinedButton(
                             onPressed: () {
-                              Navigator.pop(context);
-                              _openEditor(item: item);
+                              Navigator.pop(sheetContext);
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                _openEditor(item: item);
+                              });
+                              return;
                             },
                             style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                             child: Text(L.of(context).edit, style: TextStyle(fontWeight: FontWeight.w700)),
@@ -3358,8 +3473,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         Expanded(
                           child: FilledButton(
                             onPressed: () {
-                              Navigator.pop(context);
-                              _confirmDeleteAfterClosingSheet(item);
+                              Navigator.pop(sheetContext);
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                _confirmDeleteAfterClosingSheet(item);
+                              });
+                              return;
                             },
                             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF111827), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                             child: Text(L.of(context).delete, style: TextStyle(fontWeight: FontWeight.w700)),
@@ -3428,7 +3547,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Container(
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -3437,28 +3556,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               _menuTile(Icons.ios_share, L.of(context).share, () {
-                Navigator.pop(context);
-                _shareItem(item);
+                // 시트를 먼저 완전히 닫고, 닫힘이 끝난 뒤 다음 프레임에 액션을 실행합니다.
+                // 같은 터치가 뒤에 남은 다른 타일로 전파되지 않도록 즉시 return 합니다.
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _shareItem(item);
+                });
+                return;
               }),
               _menuTile(Icons.edit, L.of(context).edit, () {
-                Navigator.pop(context);
-                _openEditor(item: item);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _openEditor(item: item);
+                });
+                return;
               }),
               _menuTile(Icons.copy, L.of(context).copy, () {
-                Navigator.pop(context);
-                _copyItem(item);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _copyItem(item);
+                });
+                return;
               }),
               _menuTile(
                 Icons.widgets_outlined,
                 L.of(context).pick(ko: '홈 위젯에 추가', en: 'Add to home widget', ja: 'ホームウィジェットに追加', vi: 'Thêm vào widget'),
                 () {
-                  Navigator.pop(context);
-                  _requestPinHomeWidget(wide: false, pinnedItem: item);
+                  Navigator.pop(sheetContext);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _requestPinHomeWidget(wide: false, pinnedItem: item);
+                  });
+                  return;
                 },
               ),
               _menuTile(Icons.delete_outline, L.of(context).delete, () {
-                Navigator.pop(context);
-                _confirmDeleteAfterClosingSheet(item);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _confirmDeleteAfterClosingSheet(item);
+                });
+                return;
               }, danger: true),
             ],
           ),
@@ -4239,7 +4377,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         itemId: '__fullscreen_test__',
         memo: null,
         strong: true,
-      ));
+      ).then((_) {}));
     }
 
     if (!mounted) return;
@@ -4600,7 +4738,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       alarmMinutesBefore: preset.alarmMinutesBefore,
     );
 
-    await _upsertItem(item);
+    await _upsertItem(item, showSaveToast: false);
     if (!mounted) return;
     if (shouldCelebrateFirstCard) {
       _showFirstCardCelebration();
@@ -5819,6 +5957,17 @@ class _TrashPageState extends State<TrashPage> {
         return Icons.local_cafe_rounded;
       case 'fitness':
         return Icons.fitness_center_rounded;
+      // 추가된 아이콘 (기존 키는 호환을 위해 위에 유지)
+      case 'hospital':
+        return Icons.local_hospital_rounded;
+      case 'medicine':
+        return Icons.medication_rounded;
+      case 'salary':
+        return Icons.payments_rounded;
+      case 'cardbill':
+        return Icons.credit_card_rounded;
+      case 'study':
+        return Icons.menu_book_rounded;
       case 'star':
       default:
         return Icons.star_rounded;
@@ -6007,8 +6156,8 @@ class _EditPageState extends State<EditPage> {
 
   final _icons = const [
     'star', 'heart', 'cake', 'flight', 'school',
-    'work', 'home', 'pets', 'music', 'gift',
-    'camera', 'car', 'cart', 'coffee', 'fitness',
+    'work', 'home', 'pets', 'hospital', 'gift',
+    'medicine', 'car', 'cardbill', 'salary', 'study',
   ];
 
   final _colors = const [
@@ -6097,6 +6246,17 @@ class _EditPageState extends State<EditPage> {
         return Icons.local_cafe;
       case 'fitness':
         return Icons.fitness_center;
+      // 추가된 아이콘 (기존 키는 호환을 위해 위에 유지)
+      case 'hospital':
+        return Icons.local_hospital;
+      case 'medicine':
+        return Icons.medication;
+      case 'salary':
+        return Icons.payments;
+      case 'cardbill':
+        return Icons.credit_card;
+      case 'study':
+        return Icons.menu_book;
       default:
         return Icons.star;
     }
