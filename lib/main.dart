@@ -112,6 +112,28 @@ class L {
   String get caution => pick(ko: '주의', en: 'Check', ja: '注意', vi: 'Chú ý');
   String get normal => pick(ko: '정상', en: 'OK', ja: '正常', vi: 'Ổn');
   String get later => pick(ko: '나중에', en: 'Later', ja: '後で', vi: 'Để sau');
+    String get permissionIntroTitle => pick(
+      ko: 'TickDay 알림 설정 안내',
+      en: 'TickDay notification setup',
+      ja: 'TickDayの通知設定のご案内',
+      vi: 'Hướng dẫn cài đặt thông báo TickDay',
+      );
+    String get permissionIntroBody => pick(
+      ko:
+        'TickDay가 약속한 시간에 정확하게 알림을 보내고,\n강한 알림 기능을 제공하기 위해 일부 권한이 필요합니다.\n\n권한을 허용하지 않아도 앱은 사용할 수 있지만,\n알림이 늦게 울리거나 표시되지 않을 수 있습니다.',
+      en:
+        'TickDay needs a few permissions so reminders arrive on time and stronger alerts can be shown.\n\nYou can keep using the app without granting them, but reminders may be delayed or not appear.',
+      ja:
+        'TickDayが予定時刻に通知を正しく届けたり、強い通知を表示したりするために、いくつかの権限が必要です。\n\n権限を許可しなくてもアプリは使用できますが、通知が遅延したり表示されない場合があります。',
+      vi:
+        'TickDay cần một vài quyền để gửi nhắc nhở đúng giờ và hiển thị thông báo mạnh.\n\nBạn vẫn có thể sử dụng ứng dụng mà không cấp quyền, nhưng nhắc nhở có thể bị trễ hoặc không hiển thị.',
+      );
+    String get permissionSetup => pick(
+      ko: '권한 설정하기',
+      en: 'Open permissions',
+      ja: '権限を設定する',
+      vi: 'Cài đặt quyền',
+      );
   String get confirm => pick(ko: '확인', en: 'OK', ja: '確認', vi: 'OK');
   String get save => pick(ko: '저장', en: 'Save', ja: '保存', vi: 'Lưu');
   String get done => pick(ko: '완료', en: 'Done', ja: '完了', vi: 'Xong');
@@ -255,10 +277,10 @@ class NotificationService {
       _launchPayload = launchPayload;
     }
 
+    // Do NOT request permissions automatically on init.
+    // Permission requests should be triggered by explicit user action.
+    // Keep plugin instance resolution available for later explicit requests.
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestNotificationsPermission();
-    await androidPlugin?.requestExactAlarmsPermission();
-    await androidPlugin?.requestFullScreenIntentPermission();
   }
 
   static Future<bool> areNotificationsEnabled() async {
@@ -1905,7 +1927,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refreshPermissionStatus();
     _startClockTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_showFirstGuideIfNeeded());
+      unawaited(_maybeShowInitialPermissionDialog());
     });
     _loadBannerAd();
   }
@@ -2002,6 +2024,63 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         transitionDuration: const Duration(milliseconds: 260),
       ),
     );
+  }
+
+  static const String _initialPermissionPromptShownKey = 'initial_permission_prompt_shown';
+
+  Future<void> _maybeShowInitialPermissionDialog() async {
+    // First, show the onboarding if needed. That function handles its own
+    // "already seen" flag, so awaiting it is safe.
+    await _showFirstGuideIfNeeded();
+
+    // After onboarding (or immediately if already seen), show permission
+    // intro dialog once per install unless already shown.
+    final prefs = await SharedPreferences.getInstance();
+    final shown = prefs.getBool(_initialPermissionPromptShownKey) ?? false;
+    if (shown || !mounted) return;
+
+    // Small delay so the UI settles after onboarding
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+
+    final l = L.of(context);
+    final doRequest = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(l.permissionIntroTitle),
+          content: Text(l.permissionIntroBody),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+              child: Text(l.later),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(true);
+              },
+              child: Text(l.permissionSetup),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Mark shown so we don't repeat.
+    await prefs.setBool(_initialPermissionPromptShownKey, true);
+    if (doRequest != true) return;
+
+    // User explicitly requested permission flow: run the three requests.
+    // These methods may open system UI; that's intended only after user action.
+    await NotificationService.requestNotificationPermission();
+    await NotificationService.requestExactAlarmPermission();
+    await NotificationService.requestFullScreenIntentPermission();
+
+    // Refresh local permission state in UI where needed.
+    await _refreshPermissionStatus();
   }
 
   /// Drawer "Bella 도움말" 진입점 — 플래그 저장 없음, 건너뛰기 숨김
