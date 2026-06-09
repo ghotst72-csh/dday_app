@@ -2326,12 +2326,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).clearSnackBars();
-        _showInfoSnack(L.of(context).pick(
-          ko: '이미 삭제된 일정이에요.',
-          en: 'This event has already been deleted.',
-          ja: 'この予定はすでに削除されています。',
-          vi: 'Sự kiện này đã bị xóa.',
-        ));
+        final message = (id == '__fullscreen_test__')
+          ? L.of(context).pick(
+              ko: '강한 알림 테스트가 완료되었습니다.',
+              en: 'Strong alarm test completed.',
+              ja: '強いアラームのテストが完了しました。',
+              vi: 'Thông báo mạnh đã được kiểm tra xong.',
+            )
+          : L.of(context).pick(
+              ko: '이미 삭제된 일정이에요.',
+              en: 'This event has already been deleted.',
+              ja: 'この予定はすでに削除されています。',
+              vi: 'Sự kiện này đã bị xóa.',
+            );
+        _showInfoSnack(message);
       });
       return;
     }
@@ -4225,6 +4233,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 Text(l.pick(ko: '강한 알람 모드', en: 'Strong alarm mode', ja: '強いアラームモード', vi: 'Chế độ báo thức mạnh'), style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
                                 const SizedBox(height: 2),
                                 Text(l.pick(ko: '알람 발생 시 반복 멜로디를 재생합니다.', en: 'Plays a repeating melody when an alarm fires.', ja: 'アラーム発生時にメロディーをループ再生します。', vi: 'Phát âm thanh lặp lại khi báo thức.'), style: const TextStyle(fontSize: 12.3, height: 1.25, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+                                const SizedBox(height: 6),
+                                Text(
+                                  l.pick(
+                                    ko: '제조사 및 Android 정책에 따라 강한 알림은 잠금화면에서 가장 안정적으로 동작합니다. 일부 기기에서는 사용 중일 때 일반 알림으로 표시될 수 있습니다.',
+                                    en: 'Depending on the device maker and Android policy, strong alarms work most reliably on the lock screen. On some devices, they may appear as a normal notification while in use.',
+                                    ja: 'メーカーやAndroidのポリシーにより、強い通知はロック画面で最も安定して動作します。一部の機種では使用中に通常の通知として表示される場合があります。',
+                                    vi: 'Tùy theo nhà sản xuất và chính sách Android, thông báo mạnh hoạt động ổn định nhất trên màn hình khóa. Trên một số thiết bị, nó có thể hiển thị dưới dạng thông báo thường khi đang sử dụng.',
+                                  ),
+                                  style: const TextStyle(fontSize: 11.5, height: 1.35, fontWeight: FontWeight.w500, color: Color(0xFF6B7280)),
+                                ),
                               ],
                             ),
                           ),
