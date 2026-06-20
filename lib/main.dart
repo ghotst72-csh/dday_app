@@ -19,7 +19,6 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 
-const String _localePrefsKey = 'tickday_locale';
 const String _splashSeenPrefsKey = 'tickday_splash_seen';
 const String _firstGuideSeenPrefsKey = 'tickday_first_guide_seen';
 const String _globalReminderEnabledKey = 'tickday_global_reminder_enabled';
@@ -34,35 +33,16 @@ const String _privacyPolicyUrl = 'https://ghotst72-csh.github.io/tickday-policy/
 const String _termsOfUseUrl = 'https://ghotst72-csh.github.io/tickday-terms/terms.html';
 const int _todaySummaryNotificationId = 999101;
 const int _todaySummaryScheduleDays = 7;
-final ValueNotifier<Locale?> appLocaleNotifier = ValueNotifier<Locale?>(null);
-
-Locale? _localeFromCode(String? code) {
-  switch (code) {
+Locale resolveTickDayLocale(Locale? locale) {
+  switch (locale?.languageCode) {
     case 'ko':
       return const Locale('ko', 'KR');
-    case 'en':
-      return const Locale('en', 'US');
     case 'ja':
       return const Locale('ja', 'JP');
     case 'vi':
       return const Locale('vi', 'VN');
     default:
-      return null;
-  }
-}
-
-String _languageName(String code) {
-  switch (code) {
-    case 'ko':
-      return '한국어';
-    case 'en':
-      return 'English';
-    case 'ja':
-      return '日本語';
-    case 'vi':
-      return 'Tiếng Việt';
-    default:
-      return 'System';
+      return const Locale('en', 'US');
   }
 }
 
@@ -512,19 +492,7 @@ class FullScreenNotificationOverlay {
     _currentEntry?.remove();
     _currentEntry = null;
 
-    // locale 확정: notifier가 null이면 SharedPreferences에서 직접 읽음
-    // (앱 시작 직후 async 초기화 전에 show()가 호출되는 경우 대비)
-    Locale locale = appLocaleNotifier.value ?? const Locale('ko', 'KR');
-    if (appLocaleNotifier.value == null) {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final code = prefs.getString(_localePrefsKey);
-        if (code != null) {
-          locale = _localeFromCode(code) ?? locale;
-        }
-      } catch (_) {}
-    }
-    final l = L(locale);
+    final l = L(resolveTickDayLocale(WidgetsBinding.instance.platformDispatcher.locale));
     final badge = l.pick(ko: 'D-Day 알림', en: 'D-Day Reminder', ja: 'D-Day通知', vi: 'Nhắc D-day');
     final confirmLabel = l.pick(ko: '확인하기', en: 'Confirm', ja: '확인', vi: 'Xác nhận');
     final closeLabel = l.pick(ko: '닫기', en: 'Close', ja: '閉じる', vi: 'Đóng');
@@ -914,8 +882,7 @@ class _FullScreenNotificationWidgetState extends State<_FullScreenNotificationWi
 
 
 String _overlayText(BuildContext context, String key) {
-  final locale = appLocaleNotifier.value ?? Localizations.localeOf(context);
-  final l = L(locale);
+  final l = L(resolveTickDayLocale(Localizations.localeOf(context)));
   switch (key) {
     case 'badge': return l.pick(ko:'D-Day 알림', en:'D-Day Reminder', ja:'D-Day通知', vi:'Nhắc D-day');
     case 'title': return l.pick(ko:'알림 미리보기', en:'Notification Preview', ja:'通知プレビュー', vi:'Xem trước thông báo');
@@ -984,45 +951,34 @@ final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
 class _DdayAppState extends State<DdayApp> {
   @override
-  void initState() {
-    super.initState();
-    _loadSavedLocale();
-  }
-
-  Future<void> _loadSavedLocale() async {
-    final prefs = await SharedPreferences.getInstance();
-    appLocaleNotifier.value = _localeFromCode(prefs.getString(_localePrefsKey));
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Locale?>(
-      valueListenable: appLocaleNotifier,
-      builder: (context, locale, _) {
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'TickDay',
-          navigatorKey: _navigatorKey,
-          locale: locale,
-          supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US'), Locale('ja', 'JP'), Locale('vi', 'VN')],
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          theme: ThemeData(
-            useMaterial3: true,
-            fontFamily: 'Roboto',
-            scaffoldBackgroundColor: const Color(0xFFF4F6FA),
-            colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF111827)),
-            textTheme: ThemeData.light().textTheme.apply(
-                  bodyColor: const Color(0xFF111827),
-                  displayColor: const Color(0xFF111827),
-                ),
-          ),
-          home: const SplashGate(),
-        );
-      },
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'TickDay',
+      navigatorKey: _navigatorKey,
+      supportedLocales: const [
+        Locale('en', 'US'),
+        Locale('ko', 'KR'),
+        Locale('ja', 'JP'),
+        Locale('vi', 'VN'),
+      ],
+      localeResolutionCallback: (locale, supportedLocales) => resolveTickDayLocale(locale),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      theme: ThemeData(
+        useMaterial3: true,
+        fontFamily: 'Roboto',
+        scaffoldBackgroundColor: const Color(0xFFF4F6FA),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF111827)),
+        textTheme: ThemeData.light().textTheme.apply(
+              bodyColor: const Color(0xFF111827),
+              displayColor: const Color(0xFF111827),
+            ),
+      ),
+      home: const SplashGate(),
     );
   }
 }
@@ -2254,7 +2210,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // ⚠️ 풀스크린 알림 플래그 감지 (1차 안전버전, 테스트용)
     if (payload == '__fullscreen_test__' || payload == '__fullscreen_auto__') {
       FullScreenNotificationOverlay.setContext(context);
-      final _l = L(appLocaleNotifier.value ?? const Locale('ko', 'KR'));
+      final _l = L(resolveTickDayLocale(Localizations.localeOf(context)));
       unawaited(FullScreenNotificationOverlay.show(
         title: _l.pick(ko: '알림 미리보기', en: 'Notification Preview', ja: '通知プレビュー', vi: 'Xem trước thông báo'),
         body: '',
@@ -3862,7 +3818,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildAppDrawer() {
     final l = L.of(context);
-    final currentCode = Localizations.localeOf(context).languageCode;
     return Drawer(
       backgroundColor: Colors.white,
       child: SafeArea(
@@ -3898,7 +3853,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   _drawerTile(Icons.home_rounded, l.pick(ko: '전체 일정', en: 'All events', ja: 'すべての予定', vi: 'Tất cả sự kiện'), () => Navigator.pop(context), selected: true),
                   _drawerTile(Icons.widgets_rounded, l.pick(ko: '홈 위젯 추가', en: 'Add home widget', ja: 'ホームウィジェット追加', vi: 'Thêm widget'), () { Navigator.pop(context); _showWidgetPlanSheet(); }),
                   _drawerTile(Icons.notifications_active_rounded, l.pick(ko: '알림 설정', en: 'Reminder settings', ja: '通知設定', vi: 'Cài đặt nhắc nhở'), () { Navigator.pop(context); _showGlobalReminderSettingsSheet(); }),
-                  _drawerTile(Icons.language_rounded, l.pick(ko: '언어 설정', en: 'Language', ja: '言語設定', vi: 'Ngôn ngữ'), () { Navigator.pop(context); _showLanguageSheet(); }, trailingText: _languageName(currentCode)),
                   _drawerTile(Icons.auto_stories_rounded, l.onboardingHelpMenu, () { Navigator.pop(context); unawaited(_showBellaHelp()); }),
                   _drawerTile(
                     Icons.palette_rounded,
@@ -4296,82 +4250,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         },
       ),
     );
-  }
-
-  Future<void> _showLanguageSheet() async {
-    final l = L.of(context);
-    final currentCode = Localizations.localeOf(context).languageCode;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l.pick(ko: '언어 설정', en: 'Language', ja: '言語設定', vi: 'Ngôn ngữ'), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
-              const SizedBox(height: 6),
-              Text(l.pick(ko: '사용할 언어를 선택하세요.', en: 'Choose your language.', ja: '使用する言語を選択してください。', vi: 'Chọn ngôn ngữ bạn muốn dùng.'), style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Color(0xFF6B7280))),
-              const SizedBox(height: 14),
-              _languageTile('ko', '🇰🇷', '한국어', currentCode),
-              _languageTile('en', '🇺🇸', 'English', currentCode),
-              _languageTile('ja', '🇯🇵', '日本語', currentCode),
-              _languageTile('vi', '🇻🇳', 'Tiếng Việt', currentCode),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(16)),
-                child: Text(l.pick(ko: '언어는 언제든지 변경할 수 있어요. 위젯 문구도 함께 바뀝니다.', en: 'You can change the language anytime. Widget messages update too.', ja: '言語はいつでも変更できます。ウィジェットの文言も変わります。', vi: 'Bạn có thể đổi ngôn ngữ bất cứ lúc nào. Nội dung widget cũng sẽ đổi theo.'), style: const TextStyle(fontSize: 13.5, height: 1.35, fontWeight: FontWeight.w700, color: Color(0xFF6D3E91))),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _languageTile(String code, String flag, String label, String currentCode) {
-    final selected = currentCode == code;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: selected ? const Color(0xFFF9F5FF) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _setLanguage(code),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? const Color(0xFF111827) : const Color(0xFFE5E7EB))),
-            child: Row(
-              children: [
-                Text(flag, style: const TextStyle(fontSize: 24)),
-                const SizedBox(width: 12),
-                Expanded(child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF111827)))),
-                Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? const Color(0xFF111827) : const Color(0xFF9CA3AF)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _setLanguage(String code) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_localePrefsKey, code);
-    appLocaleNotifier.value = _localeFromCode(code);
-    if (!mounted) return;
-    Navigator.pop(context);
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
-    _refreshNow();
   }
 
   Future<void> _openExternalUrl(String url, {required String fallbackType}) async {
